@@ -18,6 +18,7 @@ OPTIONS:
     -sub SUBJECTS | --subjects SUBJECTS: comma-separated list (no spaces!) of subjects to process (e.g., sub-001,sub-002)
     -ses SESSIONS | --sessions SESSIONS: comma-separated list (no spaces!) of sessions to process (e.g., ses-01,ses-02)
                                         Note: -ses requires -sub to be specified
+    -cont CONTAINER_PATH | --container CONTAINER_PATH: path to Singularity container (required)
     -b FIELD | --magnetic-field FIELD: magnetic field strength in Tesla (default: 7)
     -fa ANGLE | --flip-angle ANGLE: flip angle in degrees (default: 55.0)
     -tr RATIO | --tr-ratio RATIO: TR ratio value (default: 5.0)
@@ -47,11 +48,11 @@ DESCRIPTION:
     Creates BIDS structure in output directory: output/sub-xxx/ses-xx/anat/
 
 EXAMPLES:
-    $(basename $0) Prisma /data/input /data/output
-    $(basename $0) -b 3 -fa 20 -tr 6 Terra /data/input /data/output
-    $(basename $0) -sub \"sub-001,sub-002\" Prisma /data/input /data/output
-    $(basename $0) -sub \"sub-001\" -ses \"ses-01,ses-02\" Terra /data/input /data/output
-    $(basename $0) --dry-run -t 10 Prisma_fit /data/input /data/output
+    $(basename $0) -cont /path/to/container.sif Prisma /data/input /data/output
+    $(basename $0) -cont /path/to/container.sif -b 3 -fa 20 -tr 6 Terra /data/input /data/output
+    $(basename $0) -cont /path/to/container.sif -sub \"sub-001,sub-002\" Prisma /data/input /data/output
+    $(basename $0) -cont /path/to/container.sif -sub \"sub-001\" -ses \"ses-01,ses-02\" Terra /data/input /data/output
+    $(basename $0) -cont /path/to/container.sif --dry-run -t 10 Prisma_fit /data/input /data/output
 
 AUTHOR:
     Niklas Kuegler (kuegler@cbs.mpg.de)
@@ -70,6 +71,7 @@ sessions=""
 magnetic_field=7
 flip_angle=55.0
 tr_ratio=5.0
+container_path=""
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -88,6 +90,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -ses|--sessions)
             sessions="$2"
+            shift 2
+            ;;
+        -cont|--container)
+            container_path="$2"
             shift 2
             ;;
         -b|--magnetic-field)
@@ -136,6 +142,12 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Validation
+if [[ -z "$container_path" ]]; then
+    echo "Error: Container path must be specified with -cont/--container"
+    usage
+    exit 1
+fi
+
 if [[ -z "$scanner_name" ]]; then
     echo "Error: Scanner name must be specified"
     usage
@@ -156,6 +168,11 @@ fi
 
 if [[ ! -d "$parent_dir" ]]; then
     echo "Error: Parent directory does not exist: $parent_dir"
+    exit 1
+fi
+
+if [[ ! -f "$container_path" ]]; then
+    echo "Error: Container file does not exist: $container_path"
     exit 1
 fi
 
@@ -222,9 +239,9 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 gnlc_dir="/data/u_kuegler_software/git/batch_gnlc/correct_MagOnly/"
 
 # Define paths to SLURM scripts
-denoise_script="$script_dir/denoise_slurm.sh"   # TODO
-gnlc_script="$gnlc_dir/gnlc_slurm_mag.sh" 
-t2fit_script="$script_dir/t2fit_slurm.sh"   # TODO
+denoise_script="$script_dir/slurm_denoise_nbc.sh"
+gnlc_script="$gnlc_dir/call_slurm_batch_magn.sh" # calls SLURM script
+t2fit_script="$script_dir/slurm_b1corr_t2fit.sh" 
 
 if [[ ! -f "$denoise_script" ]]; then
     echo "Error: Denoising SLURM script not found at $denoise_script"
@@ -256,7 +273,7 @@ if [[ ${#subject_array[@]} -eq 0 ]]; then
     # No subject filter - find all anat directories
     while IFS= read -r -d '' anat_dir; do
         anat_dirs+=("$anat_dir")
-    done < <(find "$parent_dir" -type d -path "*/sub-*/ses-*/anat" -print0 2>/dev/null)
+    done < <(find "$parent_dir" -maxdepth 3 -type d -path "*/sub-*/ses-*/anat" -print0 2>/dev/null)
 else
     # Filter by specified subjects and optionally sessions
     for subject in "${subject_array[@]}"; do
@@ -264,13 +281,13 @@ else
             # No session filter - find all sessions for this subject
             while IFS= read -r -d '' anat_dir; do
                 anat_dirs+=("$anat_dir")
-            done < <(find "$parent_dir" -type d -path "*/${subject}/ses-*/anat" -print0 2>/dev/null)
+            done < <(find "$parent_dir" -maxdepth 3 -type d -path "*/${subject}/ses-*/anat" -print0 2>/dev/null)
         else
             # Filter by specific sessions for this subject
             for session in "${session_array[@]}"; do
                 while IFS= read -r -d '' anat_dir; do
                     anat_dirs+=("$anat_dir")
-                done < <(find "$parent_dir" -type d -path "*/${subject}/${session}/anat" -print0 2>/dev/null)
+                done < <(find "$parent_dir" -maxdepth 3 -type d -path "*/${subject}/${session}/anat" -print0 2>/dev/null)
             done
         fi
     done
@@ -292,6 +309,7 @@ fi
 
 echo "Found ${#anat_dirs[@]} anat directories to process"
 echo "Processing parameters:"
+echo "  Container: $container_path"
 echo "  Scanner: $scanner_name"
 echo "  Magnetic field: ${magnetic_field}T"
 echo "  Flip angle: ${flip_angle}°"
@@ -359,9 +377,9 @@ for anat_path in "${anat_dirs[@]}"; do
         # JOB 1: DENOISING
         # ================================================================
         echo "  Submitting denoising job..."
-        
-        denoise_cmd="sbatch -p short,group_servers,gr_weiskopf \"$denoise_script\" \"$anat_path\" \"$working_dir\" \"$target_output_dir\" \"$magnetic_field\" \"$flip_angle\" \"$tr_ratio\" \"$delete_workdir\"" # TODO
-        
+
+        denoise_cmd="sbatch -p short,group_servers,gr_weiskopf \"$denoise_script\" \"$container_path\" \"$subject\" \"$session\" \"$magnetic_field\" \"$parent_dir\" \"$output_dir\""
+
         if [[ "$dry_run" == "false" ]]; then
             out=$(eval $denoise_cmd)
             echo "    $out"
@@ -390,47 +408,110 @@ for anat_path in "${anat_dirs[@]}"; do
         
         # Get dependency on denoising job
         denoise_job_id="${denoise_job_ids[$session_id]}"
-        gnlc_dependency="--dependency=afterok:$denoise_job_id"
         
         # define settings for GNLC
-        gnlc_working_dir="$working_dir/gnlc"
-        file_pattern="" # TODO 
-        no_jacobian=false
+        contrast_mese="_proc-denoisedNbc" # file_pattern="${contrast}*${pattern}"
+        file_pattern_mese="MESE"
+        output_dir_mese="$output_dir" # use the parent output directory here!
+
+        contrast_afi="acq-stx4D_TB1" # file_pattern="${contrast}*${pattern}"
+        file_pattern_afi="AFI" # has to be chosen like this to avoid the resampled AFI to be included
+        output_dir_afi="$output_dir" # use the parent output directory here!
         
-        gnlc_cmd="sbatch -p short,group_servers,gr_weiskopf $gnlc_dependency \"$gnlc_script\" \"$anat_path\" \"$gnlc_working_dir\" \"$file_pattern\" \"$scanner_name\" \"$target_output_dir\" \"$no_jacobian\" \"$delete_workdir\""
+        # Define GNLC commands
+        gnlc_cmd_mese="bash $gnlc_script -c $contrast_mese -p $file_pattern_mese -sub $subject -ses $session -dep $denoise_job_id $scanner_name $parent_dir $output_dir_mese"
+        gnlc_cmd_afi="bash $gnlc_script -c $contrast_afi -p $file_pattern_afi -sub $subject -ses $session -dep $denoise_job_id $scanner_name $parent_dir $output_dir_afi"
         
         if [[ "$dry_run" == "false" ]]; then
-            out=$(eval $gnlc_cmd)
-            echo "    $out"
+            # Array to collect all job IDs from MESE and AFI GNLC calls
+            all_gnlc_job_ids=()
             
-            # Extract job ID from sbatch output
-            if [[ $out =~ Submitted\ batch\ job\ ([0-9]+) ]]; then
-                gnlc_job_id="${BASH_REMATCH[1]}"
-                gnlc_job_ids[$session_id]="$gnlc_job_id"
-                echo "    GNLC job ID: $gnlc_job_id (depends on successful job: $denoise_job_id)"
-            else
-                echo "    Error: Could not extract job ID from sbatch output"
+            # ============================================================
+            # MESE GNLC CALL
+            # ============================================================
+            echo "    Running MESE GNLC call..."
+            gnlc_call_mese=$($gnlc_cmd_mese)
+            
+            # Extract job IDs from MESE GNLC call
+            mese_job_ids=()
+            while IFS= read -r line; do
+                if [[ $line =~ Job\ ([0-9]+)\ submitted ]]; then
+                    mese_gnlc_job_id="${BASH_REMATCH[1]}"
+                    mese_job_ids+=("$mese_gnlc_job_id")
+                    all_gnlc_job_ids+=("$mese_gnlc_job_id")
+                    echo "    Captured GNLC job ID (MESE): $mese_gnlc_job_id"
+                fi
+            done <<< "$gnlc_call_mese"
+            
+            # Check if we got any job IDs from MESE call
+            if [[ ${#mese_job_ids[@]} -eq 0 ]]; then
+                echo "    WARNING: No job IDs found in MESE GNLC call script output. Skipping session."
                 ((skipped_sessions++))
                 ((job_counter++))
                 continue
             fi
+            
+            # ============================================================
+            # AFI GNLC CALL (parallel to MESE)
+            # ============================================================
+            echo "    Running AFI GNLC call..."
+
+            gnlc_call_afi=$($gnlc_cmd_afi)
+
+            # Extract job IDs from AFI GNLC call
+            afi_job_ids=()
+            while IFS= read -r line; do
+                if [[ $line =~ Job\ ([0-9]+)\ submitted ]]; then
+                    afi_gnlc_job_id="${BASH_REMATCH[1]}"
+                    afi_job_ids+=("$afi_gnlc_job_id")
+                    all_gnlc_job_ids+=("$afi_gnlc_job_id")
+                    echo "    Captured GNLC job ID (AFI): $afi_gnlc_job_id"
+                fi
+            done <<< "$gnlc_call_afi"
+
+            # Check if we got any job IDs from AFI call
+            if [[ ${#afi_job_ids[@]} -eq 0 ]]; then
+                echo "    WARNING: No job IDs found in AFI GNLC call script output. Skipping session."
+                ((skipped_sessions++))
+                ((job_counter++))
+                continue
+            fi
+
+            # Store all job IDs for this session (comma-separated for multiple jobs)
+            IFS=',' gnlc_job_ids_string="${all_gnlc_job_ids[*]}"
+            gnlc_job_ids[$session_id]="$gnlc_job_ids_string"
+            echo "    All GNLC job IDs: ${all_gnlc_job_ids[*]} (depends on successful job: $denoise_job_id)"
         else
-            echo "    DRY RUN: Would submit GNLC job with command:"
-            echo "    $gnlc_cmd"
-            echo "    DRY RUN: Job would depend on successful denoising job: $denoise_job_id"
-            gnlc_job_ids[$session_id]="DRY_RUN_GNLC_JOB_ID"
-        fi
+            echo "    DRY RUN: Would run GNLC call script for MESE data with the following command:"
+            echo "    $gnlc_cmd_mese"
+            echo "    DRY RUN: Would run GNLC call script for AFI data with the following command:"
+            echo "    $gnlc_cmd_afi"
+            echo "    DRY RUN: Jobs would depend on successful denoising job: $denoise_job_id"
+            gnlc_job_ids[$session_id]="DRY_RUN_GNLC_JOB_ID1,DRY_RUN_GNLC_JOB_ID2"
+        fi 
+
         
         # ================================================================
         # JOB 3: B1+ CORRECTION and T2 FITTING
         # ================================================================
         echo "  Submitting B1+ correction and T2 fitting job..."
 
-        # Get dependency on GNLC job
-        gnlc_job_id="${gnlc_job_ids[$session_id]}"
-        t2fit_dependency="--dependency=afterok:$gnlc_job_id"
+        # Get dependency on all GNLC jobs
+        gnlc_job_ids_string="${gnlc_job_ids[$session_id]}"
+        IFS=',' read -ra gnlc_job_ids_array <<< "$gnlc_job_ids_string"
         
-        t2fit_cmd="sbatch -p short,group_servers,gr_weiskopf $t2fit_dependency \"$t2fit_script\" \"$anat_path\" \"$working_dir\" \"$target_output_dir\" \"$magnetic_field\" \"$flip_angle\" \"$tr_ratio\" \"$delete_workdir\"" # TODO
+        # Build dependency string for multiple jobs
+        if [[ ${#gnlc_job_ids_array[@]} -gt 1 ]]; then
+            # Multiple jobs - create dependency on all of them
+            dependency_list=$(IFS=':'; echo "${gnlc_job_ids_array[*]}")
+            t2fit_dependency="--dependency=afterok:$dependency_list"
+        else
+            # Single job
+            t2fit_dependency="--dependency=afterok:${gnlc_job_ids_array[0]}"
+        fi
+
+
+        t2fit_cmd="sbatch -p short,group_servers,gr_weiskopf $t2fit_dependency \"$t2fit_script\" \"$container_path\" \"$subject\" \"$session\" \"$magnetic_field\" \"$parent_dir\" \"$output_dir\" \"$tr_ratio\" \"$flip_angle\" \"$delete_workdir\""
         
         if [[ "$dry_run" == "false" ]]; then
             out=$(eval $t2fit_cmd)
@@ -440,7 +521,7 @@ for anat_path in "${anat_dirs[@]}"; do
             if [[ $out =~ Submitted\ batch\ job\ ([0-9]+) ]]; then
                 t2fit_job_id="${BASH_REMATCH[1]}"
                 t2fit_job_ids[$session_id]="$t2fit_job_id"
-                echo "    T2 fitting job ID: $t2fit_job_id (depends on successful job: $gnlc_job_id)"
+                echo "    T2 fitting job ID: $t2fit_job_id (depends on successful jobs: ${gnlc_job_ids_array[*]})"
             else
                 echo "    Error: Could not extract job ID from sbatch output"
                 ((skipped_sessions++))
@@ -448,8 +529,9 @@ for anat_path in "${anat_dirs[@]}"; do
                 continue
             fi
         else
-            echo "    DRY RUN: Would submit T2 fitting job with command: $t2fit_cmd"
-            echo "    DRY RUN: Job would depend on successful GNLC job: $gnlc_job_id"
+            echo "    DRY RUN: Would submit T2 fitting job with command:" 
+            echo "    $t2fit_cmd"
+            echo "    DRY RUN: Job would depend on successful GNLC jobs: ${gnlc_job_ids_array[*]}"
             t2fit_job_ids[$session_id]="DRY_RUN_T2FIT_JOB_ID"
         fi
         
