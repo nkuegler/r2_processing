@@ -4,7 +4,7 @@ From: rocm/dev-ubuntu-24.04:latest
 %labels
     Patrick Scheibe, adapted by Niklas Kuegler
     Version v1.0
-    Description Lightweight singularity container with Python 3.10, miniforge, and custom environment based on the viper_apptainer.def from PyMRItools 
+    Description Lightweight singularity container with Python 3.10, miniforge, PyMRItools, FSL, and ANTs based on the viper_apptainer.def from PyMRItools
 
 %arguments
     # It seems we need to define the Python environment name here, because using a variable in the
@@ -16,6 +16,19 @@ From: rocm/dev-ubuntu-24.04:latest
 %environment
     export PATH=/opt/miniforge3/bin:$PATH
     export ENV_NAME={{ env_name }}
+    
+    # FSL environment variables
+    export FSLDIR="/usr/local/fsl"
+    export PATH="$FSLDIR/bin:$PATH"
+    export FSLOUTPUTTYPE="NIFTI_GZ"
+    export FSLMULTIFILEQUIT="TRUE"
+    export FSLTCLSH="$FSLDIR/bin/fsltclsh"
+    export FSLWISH="$FSLDIR/bin/fslwish"
+    
+    # ANTs environment variables
+    export ANTSPATH="/usr/local/ants/bin"
+    export PATH="$ANTSPATH:$PATH"
+    
     source /opt/miniforge3/bin/activate $ENV_NAME
 
 %files
@@ -26,16 +39,71 @@ From: rocm/dev-ubuntu-24.04:latest
     apt-get update && apt-get upgrade -y
 
     # Install required packages including Python and development tools
+    # Added FSL and ANTs dependencies
     apt-get install -y \
         wget \
         bzip2 \
-        git
+        git \
+        unzip \
+        file \
+        dc \
+        mesa-utils \
+        pulseaudio \
+        libquadmath0 \
+        libgtk2.0-0 \
+        libgomp1 \
+        cmake \
+        build-essential \
+        zlib1g-dev \
+        libboost-all-dev \
+        libvtk9-dev
+
+    mkdir -p /opt/tmp
 
     # The usual install of miniforge. Download it and run the script with options to prevent it from asking
     # any questions.
-    wget https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh -O /tmp/Miniforge3.sh
-    bash /tmp/Miniforge3.sh -b -p /opt/miniforge3
-    rm /tmp/Miniforge3.sh
+    wget https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh -O /opt/tmp/Miniforge3.sh
+    bash /opt/tmp/Miniforge3.sh -b -p /opt/miniforge3
+    rm /opt/tmp/Miniforge3.sh
+
+    # Install FSL
+    echo "Installing FSL..."
+    wget https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/releases/fslinstaller.py -O /opt/tmp/fslinstaller.py
+    python3 /opt/tmp/fslinstaller.py -d /usr/local/fsl/ -V 6.0.6
+    rm /opt/tmp/fslinstaller.py
+    
+    # Source FSL configuration
+    . /usr/local/fsl/etc/fslconf/fsl.sh
+
+    # Install ANTs
+    echo "Installing ANTs..."
+    ### building ANTs from source code
+    # mkdir -p /opt/tmp/ants-build
+    # cd /opt/tmp/ants-build
+     
+    # # Download ANTs source
+    # wget https://github.com/ANTsX/ANTs/archive/refs/tags/v2.6.0.tar.gz -O ANTs-2.6.0.tar.gz
+    # tar -xzf ANTs-2.6.0.tar.gz
+    
+    # # Build ANTs
+    # mkdir -p ANTs-2.6.0/build
+    # cd ANTs-2.6.0/build
+    # cmake -DCMAKE_INSTALL_PREFIX=/usr/local/ants ..
+    # make -j$(nproc)
+    # make install
+    
+    # # Clean up ANTs build
+    # cd /
+    # rm -rf /opt/tmp/ants-build
+
+    ### Using pre-compiled ANTs binaries for Ubuntu 24.04.
+    wget https://github.com/ANTsX/ANTs/releases/download/v2.6.0/ants-2.6.0-ubuntu-24.04-X64-gcc.zip -O /opt/tmp/ants.zip
+    unzip /opt/tmp/ants.zip -d /opt/tmp/
+    mkdir -p /usr/local/ants
+    mv /opt/tmp/ants-2.6.0/bin /usr/local/ants/
+    mv /opt/tmp/ants-2.6.0/lib /usr/local/ants/
+    rm -rf /opt/tmp/ants.zip /opt/tmp/ants-2.6.0
+
 
     # We split the installation of the Conda environment into two parts.
     # 1. Creating the conda env and installing conda dependencies
@@ -64,10 +132,37 @@ From: rocm/dev-ubuntu-24.04:latest
     conda clean -afy
     apt-get clean
     rm -rf /var/lib/apt/lists/*
+    rm -rf /opt/tmp/*
 
 %runscript
     #!/bin/bash
-    # Activate the environment and execute the provided command
+    # Source FSL configuration
+    . /usr/local/fsl/etc/fslconf/fsl.sh
+    
+    # Activate the conda environment and execute the provided command
     source /opt/miniforge3/etc/profile.d/conda.sh
     conda activate $ENV_NAME
     exec "$@"
+
+%test
+    #!/bin/bash
+    
+    # Test that FSL is working
+    echo "Testing FSL installation..."
+    export FSLDIR="/usr/local/fsl"
+    export PATH="$FSLDIR/bin:$PATH"
+    . /usr/local/fsl/etc/fslconf/fsl.sh
+    fslinfo /usr/local/fsl/data/standard/MNI152_T1_2mm_brain.nii.gz
+    
+    # Test that ANTs is working
+    echo "Testing ANTs installation..."
+    export ANTSPATH="/usr/local/ants/bin"
+    export PATH="$ANTSPATH:$PATH"
+    antsRegistration --version
+    
+    # Test conda environment
+    # echo "Testing conda environment..."
+    # export PATH="/opt/miniforge3/bin:$PATH"
+    # . /opt/miniforge3/etc/profile.d/conda.sh
+    # conda activate $ENV_NAME
+    # python -c "import torch; print('PyTorch version:', torch.__version__)"
