@@ -2,35 +2,57 @@
 
 # This script is used to resample a 4D image to the space of a reference image using ANTs.
 # It takes the following arguments:
-# 1. parent_dir: The directory where the input and reference images are located.
-# 2. input_fn: The name of the input image file to be resampled.
-# 3. reference_fn: The name of the reference image file to which the input image will be resampled.
-# 4. output_fn: The name of the output image file after resampling.
-# 5. int_mode: The interpolation mode to be used for resampling (e.g., Linear, NearestNeighbor, etc.).
-# Usage: ./resample_afi_4D.sh <parent_dir> <input_fn> <reference_fn> <output_fn> <int_mode>
+# 1. input_fn: The full path to the input image file to be resampled.
+# 2. reference_fn: The full path to the reference image file to which the input image will be resampled.
+# 3. output_fn: The full path to the output image file after resampling.
+# 4. int_mode: The interpolation mode to be used for resampling (e.g., Linear, NearestNeighbor, etc.).
+# Usage: ./resample_afi_4D.sh <input_fn> <reference_fn> <output_fn> <int_mode>
 
 # The implementation uses singularity containers provided by the IT department of the MPI CBS. It will only work in the infrastructure of the institute.
 # This is only preliminary.
 
-parent_dir=$1
-input_fn=$2
-reference_fn=$3
-output_fn=$4
-int_mode=$5
+input_fn=$1
+reference_fn=$2
+output_fn=$3
+int_mode=$4
+
+# Check if all required arguments are provided
+if [ $# -ne 4 ]; then
+    echo "Error: Exactly 4 arguments required."
+    echo "Usage: $0 <input_fn> <reference_fn> <output_fn> <int_mode>"
+    exit 1
+fi
 
 
 # Good scientists abort computations upon unexpected problems
 set -e
 
-## The more scientific way with increased reproducibility:
-fsl="sc fsl 6.0.6"
-ants="sc ants 2.5.4"
+custom_container=true
 
-cd $parent_dir
+## Use this for running the script outside of the singularity container (MPI CBS infrastructure):
+if [ "$custom_container" = false ]; then
+    fsl="sc fsl 6.0.6"
+    ants="sc ants 2.5.4"
+fi
+
+# Extract directory from output path for temporary files
+output_dir=$(dirname "$output_fn")
+temp_ref="${output_dir}/ref_tmp.nii.gz"
+
 echo "Cropping reference image to only two echoes"
-$fsl fslroi $reference_fn ref_tmp.nii.gz 0 -1 0 -1 0 -1 0 2    # cut the reference image to only two echoes
+if [ "$custom_container" = true ]; then
+    fslroi "$reference_fn" "$temp_ref" 0 -1 0 -1 0 -1 0 2    # cut the reference image to only two echoes
+else
+    $fsl fslroi "$reference_fn" "$temp_ref" 0 -1 0 -1 0 -1 0 2    # cut the reference image to only two echoes
+fi
+
 echo "Resampling input image to reference image space"
-$ants antsApplyTransforms -d 4 -i $input_fn -r ref_tmp.nii.gz -o $output_fn -n $int_mode
+if [ "$custom_container" = true ]; then
+    antsApplyTransforms -d 4 -i "$input_fn" -r "$temp_ref" -o "$output_fn" -n "$int_mode"
+else
+    $ants antsApplyTransforms -d 4 -i "$input_fn" -r "$temp_ref" -o "$output_fn" -n "$int_mode"
+fi
+
 echo "Resampling done"
 echo "Cleaning up"
-rm ref_tmp.nii.gz
+rm "$temp_ref"
