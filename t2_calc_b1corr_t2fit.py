@@ -3,12 +3,16 @@
 import pathlib as plib
 import logging
 import json
+import argparse
+import subprocess
+import sys
 
 import numpy as np
 import torch
 from scipy.ndimage import gaussian_filter
 import os
-import shutil
+import glob
+
 
 logging.basicConfig(level=logging.INFO)
 
@@ -20,7 +24,6 @@ from pymritools.modeling.dictionary import r2_pattern_matching
 
 
 import t2_calc_helper as helper
-import argparse
 
 ### SETUP
 
@@ -34,18 +37,18 @@ parser.add_argument('--session', '-ses', type=str, required=True,
                     help='Session ID (e.g., ses-04)')
 parser.add_argument('--field-strength', '-b0', type=float, required=True, 
                     help='Magnetic field strength in Tesla (e.g., 7)')
-parser.add_argument('--parent-dir', '-p', type=str, required=True,
-                    help='Parent directory path (e.g., /data/pt_02262/data/TH_bids/bids)')
 parser.add_argument('--work-dir', '-w', type=str, required=False,
                     help='Working directory path for temporary files (optional, defaults to Supplementary/ directory in output directory of each session)')
+parser.add_argument('--input-dir', '-i', type=str, required=True,
+                    help='Input directory path containing source data')
 parser.add_argument('--output-dir', '-o', type=str, required=True,
-                    help='Output directory path for final results (e.g., /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2)')
-# parser.add_argument('--delete-workdir', '-rmwd', action='store_true',
-#                     help='Delete the working directory after processing is complete')
+                    help='Output directory path for final results')
 parser.add_argument('--tr-ratio', '-trr', type=float, default=5.0,
                     help='TR ratio (TR2/TR1) for AFI B1 calculation (default: 5.0)')
 parser.add_argument('--flip-angle', '-fa', type=float, default=55.0,
                     help='Flip angle of the AFI images in degrees (default: 55.0)')
+parser.add_argument('--denoise-dir', '-denDir', type=str, required=True,
+                    help='Directory path containing denoised data')
 
 
 args = parser.parse_args()
@@ -57,55 +60,90 @@ magnetic_field = args.field_strength
 trRatio = args.tr_ratio
 fa = args.flip_angle
 
+# Define input directory
+input_dir = plib.Path(f"{args.input_dir}/{subj}/{sess}/anat/")
+if not input_dir.exists():
+    raise FileNotFoundError(f"Input directory does not exist: {input_dir}")
 
-# Define paths based on arguments
-parent_dir = plib.Path(f"{args.parent_dir}/{subj}/{sess}")
-path_t2 = parent_dir.joinpath("anat/")
-path_afi = parent_dir.joinpath("fmap/")
+# Set working directory: use provided work_dir or create Supplementary/ in output_dir
+if args.work_dir:
+    working_dir = plib.Path(f"{args.work_dir}/{subj}/{sess}/anat/")
+else:
+    working_dir = plib.Path(f"{args.output_dir}/Supplementary/{subj}/{sess}/anat/")
 
 # Define output directory
-output_dir = plib.Path(f"{args.output_dir}/{subj}/{sess}/anat/")
-output_dir.mkdir(exist_ok=True, parents=True)
+target_output_dir = plib.Path(f"{args.output_dir}/{subj}/{sess}/anat/")
 
-# Set working directory: use provided work_dir or create Supplementary in output_dir
-if args.work_dir:
-    working_dir = plib.Path(f"{args.work_dir}/{subj}/{sess}")
-else:
-    working_dir = output_dir.joinpath("Supplementary/")
+# Check if denoise directory exists if specified
+denoise_dir = plib.Path(f"{args.denoise_dir}/{subj}/{sess}/anat/")
+if not denoise_dir.exists():
+    raise FileNotFoundError(f"Denoise directory does not exist: {denoise_dir}.")
 
-# create temporary directory for results
+# Create directories
+target_output_dir.mkdir(exist_ok=True, parents=True)
+
 working_dir.mkdir(exist_ok=True, parents=True)
 working_dir_vis = working_dir.joinpath("figs/")
 working_dir_vis.mkdir(exist_ok=True, parents=True)
 
 ### settings T2 fitting
-path_db = plib.Path("/data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/emc/emc_database_7T_semc_0p6.pkl")
-
+if magnetic_field == 7.0:
+    path_db = plib.Path("/data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/emc/emc_database_7T_semc_0p6.pkl")
+elif magnetic_field == 3.0:
+    path_db = plib.Path("/data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/emc/db_mese_3T_etl10.pkl")
+else:
+    raise ValueError(f"Unsupported magnetic field strength: {magnetic_field}. Supported values are 3.0 and 7.0 Tesla.")
 
 
 ############################################
 
-
-### GRADIENT NONLINEARITY CORRECTION
-
-# TODO
-
-ValueError("Gradient nonlinearity correction not implemented yet, skipping this step.")
-exit
+mese_suffix = "MESE"
+afi_suffix = "TB1AFI"
+b1_suffix = "TB1map"
+r2_suffix = "R2map"
+t2_suffix = "T2map"
 
 ### B1+ CORRECTION
 
-
 # reload gradient nonlinearity corrected images
-afi_gnlc, afi_img_gnlc, afi_gnlc_aff, _ = \
-    helper.load_nifti_as_tensor(input_path=working_dir, 
-                                filename="afi_4d_desc-undistortedJac_TB1AFI")
 
-mese_denoise_nbc_gnlc, mese_denoise_nbc_gnlc_img, mese_gnlc_aff, fn_mese4d_proc = \
-    helper.load_nifti_as_tensor(input_path=working_dir, 
-                                filename="mese_data_denoised_desc-undistortedJac_nbc")
+fname_afi_pattern = f"{subj}_{sess}*_desc-undistortedJac_{afi_suffix}.nii"
+afi_files = glob.glob(str(input_dir / fname_afi_pattern))
+if not afi_files:
+    raise FileNotFoundError(f"No AFI file found matching pattern: {fname_afi_pattern}")
+if len(afi_files) > 1:
+    logging.warning(f"Multiple AFI files found matching pattern: {fname_afi_pattern}. Using the first one.")
+fname_afi_undistorted = plib.Path(afi_files[0]).with_suffix('').stem 
+afi_gnlc, afi_img_gnlc, afi_gnlc_aff, afi_gnlc_hdr, path_afi_gnlc = \
+    helper.load_nifti_as_tensor(input_path=input_dir, 
+                                filename=fname_afi_undistorted)
+# Extract description from header
+descrip_array_afi = afi_gnlc_hdr.get('descrip', b'')
+if descrip_array_afi is not None and np.size(descrip_array_afi) > 0:
+    afi_gnlc_description = descrip_array_afi.item().decode('utf-8') if isinstance(descrip_array_afi.item(), bytes) else str(descrip_array_afi.item())
+else:
+    afi_gnlc_description = ''
+
+fname_mese_pattern = f"{subj}_{sess}*_desc-undistortedJac_{mese_suffix}.nii"
+mese_files = glob.glob(str(input_dir / fname_mese_pattern))
+if not mese_files:
+    raise FileNotFoundError(f"No MESE file found matching pattern: {fname_mese_pattern}")
+if len(mese_files) > 1:
+    logging.warning(f"Multiple MESE files found matching pattern: {fname_mese_pattern}. Using the first one.")
+fname_mese_undistorted = plib.Path(mese_files[0]).with_suffix('').stem
+mese_denoise_nbc_gnlc, mese_denoise_nbc_gnlc_img, mese_gnlc_aff, mese_gnlc_hdr, path_mese4d_proc = \
+    helper.load_nifti_as_tensor(input_path=input_dir, 
+                                filename=fname_mese_undistorted)
 nx, ny, nz, ne = mese_denoise_nbc_gnlc.shape
+# Extract description from header
+descrip_array_mese = mese_gnlc_hdr.get('descrip', b'')
+if descrip_array_mese is not None and np.size(descrip_array_mese) > 0:
+    mese_proc_description = descrip_array_mese.item().decode('utf-8') if isinstance(descrip_array_mese.item(), bytes) else str(descrip_array_mese.item())
+else:
+    mese_proc_description = ''
 
+# Clear description arrays to free memory
+del descrip_array_afi, descrip_array_mese
 
 # extract noise voxels from the data again (this should neglect residual recon artefacts) 
 # use original not resampled data
@@ -115,10 +153,13 @@ noise_mask_afi = extract_noise_mask(input_data=afi_gnlc, erode_iter=0)
 
 
 # we can save this for reference
+fname_afi_noise_mask = f"{fname_afi_undistorted}_noiseMask"
 _ = helper.save_nifti(output_path=working_dir, 
-                       filename="afi_noise_mask", 
+                       filename=fname_afi_noise_mask, 
                        data=noise_mask_afi.to(torch.int32), 
-                       affine=afi_gnlc_aff)
+                       affine=afi_gnlc_aff,
+                       header=afi_gnlc_hdr,
+                       description=f"{fname_afi_undistorted} noise mask with {torch.sum(noise_mask_afi)} vox, {helper.get_timestamp()}")
 
 
 # calculate B1 maps from the AFI images
@@ -141,62 +182,85 @@ print(f"b1 values (%): {b1.min():.2f}, {b1.max():.2f}")
 b1_unitless = b1 / 100
 print(f"b1 values (unitless): {b1_unitless.min():.2f}, {b1_unitless.max():.2f}")
 
-
 # we can save this for reference
-fn_afib1 = helper.save_nifti(output_path=working_dir, 
-                             filename="afi_b1", 
+fname_afib1 = fname_afi_undistorted.replace(afi_suffix, b1_suffix)
+path_afib1 = helper.save_nifti(output_path=working_dir, 
+                             filename=fname_afib1, 
                              data=b1_unitless, 
-                             affine=afi_gnlc_aff)
+                             affine=afi_gnlc_aff, 
+                             header=afi_gnlc_hdr,
+                             description=f"B1+ map from {fname_afi_undistorted}, {helper.get_timestamp()}")
+# Copy the JSON file
+json_source = path_afi_gnlc.with_suffix(".json")
+json_dest = working_dir.joinpath(fname_afib1).with_suffix(".json")
+helper.copy_corresponding_json(json_source, json_dest)
+del json_source, json_dest
 
-fn_afib1err = helper.save_nifti(output_path=working_dir, 
-                             filename="afi_b1_rel_err", 
-                             data=b1_rel_err, 
-                             affine=afi_gnlc_aff)
-
+fname_afib1_rel_err = f"{fname_afib1}_rel_err"
+path_afib1err = helper.save_nifti(output_path=working_dir, 
+                             filename=fname_afib1_rel_err, 
+                             data=torch.from_numpy(b1_rel_err), 
+                             affine=afi_gnlc_aff,
+                             header=afi_gnlc_hdr,
+                             description=f"B1+ relative error map from {fname_afi_undistorted}, {helper.get_timestamp()}")
+# Copy the JSON file
+json_source = path_afi_gnlc.with_suffix(".json")
+json_dest = working_dir.joinpath(fname_afib1_rel_err).with_suffix(".json")
+helper.copy_corresponding_json(json_source, json_dest)
+del json_source, json_dest
 
 # once again we want some resampled version brought into the semc image space, we can use linear interpolation here since the b1 and the rel error maps are assumed to vary smoothly
 
+script_dir = plib.Path(__file__).parent
+
 # resample the AFI_B1 data to the MESE space using a ANTS
-print("Resample AFI_B1 to MESE space")
-basename_afib1_resampled = "afi_b1_resampled"
-fn_afib1_resampled = working_dir.joinpath(basename_afib1_resampled).with_suffix(".nii")
+print("Resample AFI_B1 to MESE space", flush=True)
+fname_afib1_resampled = fname_afib1.replace(b1_suffix, f"proc-resampled_{b1_suffix}")
+path_afib1_resampled = working_dir.joinpath(fname_afib1_resampled).with_suffix(".nii")
 interpolation_mode = "Linear" # "Linear" # "NearestNeighbor" # "BSpline" # BSpline seems to cause issues
 cmd = [
-    "/data/u_kuegler_software/git/r2_map_calculation/resample_afi_3D.sh",
-    str(working_dir),
-    fn_afib1.name,
-    fn_mese4d_proc.name,
-    fn_afib1_resampled.name,
+    str(script_dir / "resample_afi_3D.sh"),
+    str(path_afib1),
+    str(path_mese4d_proc),
+    str(path_afib1_resampled),
     interpolation_mode
 ]
-os.system(" ".join(cmd))
-print("-------------------------")
+# os.system(" ".join(cmd))
+result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+print(result.stdout, flush=True)
+if result.returncode != 0:
+    print(f"Error during resampling B1: {result.stdout}", file=sys.stderr, flush=True)
+
+print("-------------------------", flush=True)
 
 
 # resample the AFI_B1 relative error data to the MESE space using a ANTS
-print("Resample AFI_B1_rel_err to MESE space")
-basename_afib1err_resampled = "afi_b1_rel_err_resampled"
-fn_afib1err_resampled = working_dir.joinpath(basename_afib1err_resampled).with_suffix(".nii")
+print("Resample AFI_B1_rel_err to MESE space", flush=True)
+fname_afib1err_resampled = fname_afib1_rel_err.replace(b1_suffix, f"proc-resampled_{b1_suffix}")
+path_afib1err_resampled = working_dir.joinpath(fname_afib1err_resampled).with_suffix(".nii")
 interpolation_mode = "Linear" # "Linear" # "NearestNeighbor" # "BSpline" # BSpline seems to cause issues
 cmd = [
-    "/data/u_kuegler_software/git/r2_map_calculation/resample_afi_3D.sh",
-    str(working_dir),
-    fn_afib1err.name,
-    fn_mese4d_proc.name,
-    fn_afib1err_resampled.name,
+    str(script_dir / "resample_afi_3D.sh"),
+    str(path_afib1err),
+    str(path_mese4d_proc),
+    str(path_afib1err_resampled),
     interpolation_mode
 ]
-os.system(" ".join(cmd))
-print("-------------------------")
+# os.system(" ".join(cmd))
+result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+print(result.stdout, flush=True)
+if result.returncode != 0:
+    print(f"Error during resampling B1_rel_err: {result.stdout}", file=sys.stderr, flush=True)
+print("-------------------------", flush=True)
 
 
-b1_re, b1_re_img, b1_re_aff, _ = \
+b1_afi_re, b1_afi_re_img, b1_afi_re_aff, b1_afi_re_hdr, _ = \
     helper.load_nifti_as_tensor(input_path=working_dir, 
-                                filename=basename_afib1_resampled)
+                                filename=fname_afib1_resampled)
 
-b1_rel_err_re, _, _, _ = \
+b1_afi_re_rel_err, _, _, _, _ = \
     helper.load_nifti_as_tensor(input_path=working_dir,
-                                filename=basename_afib1err_resampled)
+                                filename=fname_afib1err_resampled)
 
 
 
@@ -218,11 +282,13 @@ t1_vals, t2_vals, b1_vals = db.get_t1_t2_b1_values()
 # normalize mese data
 mese_data_norm = torch.linalg.norm(mese_denoise_nbc_gnlc, dim=-1, keepdim=True)
 mese_data_normalized = torch.nan_to_num(
-    torch.divide(mese_denoise_nbc_gnlc, mese_data_norm), nan=0.0, posinf=0.0, neginf=0.0
-).contiguous()
+    torch.divide(mese_denoise_nbc_gnlc, 
+                 mese_data_norm), 
+                 nan=0.0, posinf=0.0, neginf=0.0).contiguous()
 
 # We do a poor mans b1 regularization.
 # First run we extract the b1 map the pattern matching would optimize for without providing the afi input
+print("T2 pattern matching without AFI input to extract EMC estimates")
 t2_emc, b1_emc, _ = r2_pattern_matching(
     input_data=mese_data_normalized, 
     db_mag=db_torch_mag, 
@@ -235,21 +301,37 @@ b1_emc = torch.from_numpy(gaussian_filter(b1_emc.numpy(), sigma=5))
 
 
 # we can save this for reference
+fname_b1_emc = f"{subj}_{sess}_proc-EMC_{b1_suffix}"
 _ = helper.save_nifti(output_path=working_dir, 
-                      filename="b1_emc", 
+                      filename=fname_b1_emc, 
                       data=b1_emc, 
-                      affine=mese_gnlc_aff)
+                      affine=mese_gnlc_aff,
+                      header=mese_gnlc_hdr, 
+                      description=f"B1+ map from {fname_mese_undistorted} derived using the echo-modulation curve approach, {helper.get_timestamp()}")
+# Copy the JSON file
+json_source = path_mese4d_proc.with_suffix(".json")
+json_dest = working_dir.joinpath(fname_b1_emc).with_suffix(".json")
+helper.copy_corresponding_json(json_source, json_dest)
+del json_source, json_dest
+
 
 r2_emc = torch.nan_to_num( \
-            torch.divide(torch.ones_like(t2_emc), t2_emc), 
-            nan=0.0, 
-            posinf=0.0, 
-            neginf=0.0)
+            torch.divide(torch.ones_like(t2_emc), 
+                         t2_emc), 
+                         nan=0.0, posinf=0.0, neginf=0.0)
 
+fname_r2_emc = f"{subj}_{sess}_proc-EMC_{r2_suffix}"
 _ = helper.save_nifti(output_path=working_dir, 
-                      filename="r2_emc", 
+                      filename=fname_r2_emc, 
                       data=r2_emc, 
-                      affine=mese_gnlc_aff)
+                      affine=mese_gnlc_aff,
+                      header=mese_gnlc_hdr,
+                      description=f"R2 map from {fname_mese_undistorted} derived using the echo-modulation curve approach, {helper.get_timestamp()}")
+# Copy the JSON file
+json_source = path_mese4d_proc.with_suffix(".json")
+json_dest = working_dir.joinpath(fname_r2_emc).with_suffix(".json")
+helper.copy_corresponding_json(json_source, json_dest)
+del json_source, json_dest
 
 # Now we want to use the AFI B1 estimate and 
 # the calculated afi error maps to calculate 
@@ -259,21 +341,30 @@ _ = helper.save_nifti(output_path=working_dir,
 # and do a linear weighting between afi b1 and emc b1, 
 # essentially if rel afi error is 0 we trust the afi, 
 # if relative error of afi is 10% we trust the emc
-regularization_factor = 1 - torch.clip(b1_rel_err_re, 0, 10) / 10
-b1_reg = regularization_factor * b1_re + (1 - regularization_factor) * b1_emc
+print("B1 regularization based on AFI relative error")
+regularization_factor = 1 - torch.clip(b1_afi_re_rel_err, 0, 10) / 10
+b1_reg = regularization_factor * b1_afi_re + (1 - regularization_factor) * b1_emc
 b1_reg = torch.from_numpy(gaussian_filter(b1_reg.numpy(), sigma=2))
 
 
 # we can save this for reference
+fname_b1_reg = f"{subj}_{sess}_proc-AFIregEMC_{b1_suffix}"
 _ = helper.save_nifti(output_path=working_dir, 
-                      filename="b1_reg", 
+                      filename=fname_b1_reg, 
                       data=b1_reg, 
-                      affine=b1_re_aff)
+                      affine=b1_afi_re_aff, 
+                      header=b1_afi_re_hdr,
+                      description=f"B1+ map created from preprocessed AFI images regularized with EMC B1+ estimate, {helper.get_timestamp()}")
+# Copy the JSON file
+json_source = path_afi_gnlc.with_suffix(".json")
+json_dest = working_dir.joinpath(fname_b1_reg).with_suffix(".json")
+helper.copy_corresponding_json(json_source, json_dest)
+del json_source, json_dest
 
 # We now redo the fitting with inputting the b1 regularization. 
 # This way the algorithm is not simultaneously optimizing 
 # for t2 and b1 but only needs to match the pattern wrt t2.
-
+print("Redo T2 pattern matching with regularized AFI B1 map input")
 t2, b1_reg_fit, l2_min_err = r2_pattern_matching(
     input_data=mese_data_normalized, 
     db_mag=db_torch_mag, 
@@ -287,52 +378,94 @@ t2, b1_reg_fit, l2_min_err = r2_pattern_matching(
 div_mask = t2 > 1e-9
 r2 = torch.zeros_like(t2)
 r2[div_mask] = torch.divide(torch.ones_like(r2[div_mask]), t2[div_mask])
+
 # want to get a rough snr estimate, dividing mese max value with noise mean value
-# Load noise statistics
-noise_stats_file = working_dir.joinpath("mese_noise_stats.json")
+# Load noise statistics from denoise directory
+print("Estimate SNR of MESE data")
+noise_stats_file = denoise_dir.joinpath(f"{subj}_{sess}_mese_noise_stats").with_suffix(".json")
 if noise_stats_file.exists():
     with open(noise_stats_file, 'r') as f:
         noise_stats = json.load(f)
     mese_noise_mean = noise_stats['mese_noise_mean']
-    print(f"Loaded noise mean: {mese_noise_mean}")
+    print(f"Original MESE noise mean: {mese_noise_mean}")
 else:
     raise FileNotFoundError(f"Noise statistics file not found: {noise_stats_file}")
 
 fit_data_reg_snr = torch.max(mese_denoise_nbc_gnlc, dim=-1).values / mese_noise_mean
 # make a threshold map for voxel below 5
-fit_data_reg_snr_th = (fit_data_reg_snr < 5).to(torch.int32)
+snr_threshold = 5.0
+fit_data_reg_snr_th = (fit_data_reg_snr < snr_threshold).to(torch.int32)
 
 
 # we can save this for reference
-_ = helper.save_nifti(output_path=output_dir,
-                      filename=f"{subj}_{sess}_R2map",
+print("-------------------------------")
+print("Saving results")
+
+fname_r2 = f"{subj}_{sess}_{r2_suffix}"
+_ = helper.save_nifti(output_path=target_output_dir,
+                      filename=fname_r2,
                       data=r2,
-                      affine=mese_gnlc_aff)
+                      affine=mese_gnlc_aff,
+                      header=mese_gnlc_hdr,
+                      description=f"R2 map from {fname_mese_undistorted}, AFI/EMC B1+ correction, {helper.get_timestamp()}")
+# Copy the JSON file
+json_source = path_mese4d_proc.with_suffix(".json")
+json_dest = target_output_dir.joinpath(fname_r2).with_suffix(".json")
+helper.copy_corresponding_json(json_source, json_dest)
+del json_source, json_dest
 
-_ = helper.save_nifti(output_path=output_dir,
-                      filename=f"{subj}_{sess}_T2map",
+
+fname_t2 = f"{subj}_{sess}_{t2_suffix}"
+_ = helper.save_nifti(output_path=target_output_dir,
+                      filename=fname_t2,
                       data=t2,
-                      affine=mese_gnlc_aff)
+                      affine=mese_gnlc_aff,
+                      header=mese_gnlc_hdr,
+                      description=f"T2 map from {fname_mese_undistorted}, AFI/EMC B1+ correction, {helper.get_timestamp()}")
+# Copy the JSON file
+json_source = path_mese4d_proc.with_suffix(".json")
+json_dest = target_output_dir.joinpath(fname_t2).with_suffix(".json")
+helper.copy_corresponding_json(json_source, json_dest)
+del json_source, json_dest
 
-_ = helper.save_nifti(output_path=working_dir,
-                      filename=f"{subj}_{sess}_TB1map",
+
+fname_b1_reg_fit = f"{subj}_{sess}_{b1_suffix}"
+_ = helper.save_nifti(output_path=target_output_dir,
+                      filename=fname_b1_reg_fit,
                       data=b1_reg_fit,
-                      affine=b1_re_aff)
+                      affine=b1_afi_re_aff,
+                      header=b1_afi_re_hdr,
+                      description=f"B1+ map created from preprocessed AFI images regularized with EMC B1+ estimate, {helper.get_timestamp()}")
+# Copy the JSON file
+json_source = path_afi_gnlc.with_suffix(".json")
+json_dest = target_output_dir.joinpath(fname_b1_reg_fit).with_suffix(".json")
+helper.copy_corresponding_json(json_source, json_dest)
+del json_source, json_dest
 
+
+fname_snr_map = "fit_data_reg_snr"
 _ = helper.save_nifti(output_path=working_dir,
-                      filename="fit_data_reg_snr",
+                      filename=fname_snr_map,
                       data=fit_data_reg_snr,
-                      affine=mese_gnlc_aff)
+                      affine=mese_gnlc_aff,
+                      header=mese_gnlc_hdr,
+                      description=f"Estimated SNR map of {fname_mese_undistorted}, {helper.get_timestamp()}")
+# Copy the JSON file
+json_source = path_mese4d_proc.with_suffix(".json")
+json_dest = working_dir.joinpath(fname_snr_map).with_suffix(".json")
+helper.copy_corresponding_json(json_source, json_dest)
+del json_source, json_dest
 
+
+fname_snr_thr_map = "fit_data_reg_snr_thr"
 _ = helper.save_nifti(output_path=working_dir,
-                      filename="fit_data_reg_snr_thr",
+                      filename=fname_snr_thr_map,
                       data=fit_data_reg_snr_th,
-                      affine=mese_gnlc_aff)
-
-# # Now handled in the main bash script
-# # Clean up working directory if requested
-# if args.delete_workdir:
-#     print(f"Deleting working directory: {working_dir}")
-#     shutil.rmtree(working_dir)
-#     print("Working directory deleted successfully")
-
+                      affine=mese_gnlc_aff,
+                      header=mese_gnlc_hdr,
+                      description=f"Thresholded SNR map of {fname_mese_undistorted}, threshold={snr_threshold}, {helper.get_timestamp()}")
+# Copy the JSON file
+json_source = path_mese4d_proc.with_suffix(".json")
+json_dest = working_dir.joinpath(fname_snr_thr_map).with_suffix(".json")
+helper.copy_corresponding_json(json_source, json_dest)
+del json_source, json_dest

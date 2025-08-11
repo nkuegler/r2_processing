@@ -9,6 +9,8 @@ import numpy as np
 import torch
 from scipy.ndimage import gaussian_filter
 import os
+import shutil
+from datetime import datetime
 
 import plotly.graph_objects as go
 import plotly.subplots as psub
@@ -16,9 +18,9 @@ import plotly.subplots as psub
 logging.basicConfig(level=logging.INFO)
 
 
-def save_nifti(output_path, filename, data, affine, suffix=".nii"):
+def save_nifti(output_path, filename, data, affine, header=None, description=None, suffix=".nii"):
     """
-    Save data as a NIfTI file and return the file path.
+    Save data as a NIfTI file with optional header customization.
     
     Parameters
     ----------
@@ -30,6 +32,10 @@ def save_nifti(output_path, filename, data, affine, suffix=".nii"):
         Image data to be saved.
     affine : numpy.ndarray
         4x4 affine transformation matrix for spatial coordinates.
+    header : nibabel header, optional
+        Template header to copy from. If provided, this header will be used as base.
+    description : str, optional
+        Description to add to the header (max 80 characters).
     suffix : str, optional
         File extension, default is ".nii".
         
@@ -41,8 +47,20 @@ def save_nifti(output_path, filename, data, affine, suffix=".nii"):
 
     fn = output_path.joinpath(filename).with_suffix(suffix)
     print(f"save file: {fn}")
-    i = nib.Nifti1Image(data.numpy(), affine)
-    nib.save(i, fn)
+    
+    # Create image with optional header template
+    if header is not None:
+        # Use provided header as template
+        img = nib.Nifti1Image(data.numpy(), affine, header=header.copy())
+    else:
+        # Create with default header
+        img = nib.Nifti1Image(data.numpy(), affine)
+    
+    # Customize header
+    if description is not None:
+        img.header['descrip'] = description.encode('utf-8')[:80]  # Max 80 chars
+    
+    nib.save(img, fn)
     return fn
 
 def load_nifti_as_tensor(input_path, filename, suffix=".nii"):
@@ -73,8 +91,42 @@ def load_nifti_as_tensor(input_path, filename, suffix=".nii"):
     img = nib.load(fn)
     data = torch.from_numpy(img.get_fdata())
     affine = img.affine
+    header = img.header
 
-    return data, img, affine, fn
+    return data, img, affine, header, fn
 
 
 
+def get_timestamp():
+    """
+    Get current date and time as a formatted string.
+    
+    Returns
+    -------
+    str
+        Current timestamp in ISO 8601 format
+    """
+    return datetime.now().isoformat()
+
+
+def copy_corresponding_json(json_source, json_dest):
+    """
+    Copy a JSON file corresponding to a NIfTI image from input to output directory.
+    
+    Parameters
+    ----------
+    json_source : pathlib.Path
+        Path to the source JSON file.
+    json_dest : pathlib.Path
+        Path where the JSON file should be copied.
+        
+    Returns
+    -------
+    None
+    """
+    
+    if json_source.exists():
+        shutil.copy2(json_source, json_dest)
+        print(f"Copied JSON from {json_source} to {json_dest}")
+    else:
+        print(f"Warning: JSON file not found at {json_source}")
