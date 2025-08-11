@@ -24,7 +24,7 @@ OPTIONS:
     -tr RATIO | --tr-ratio RATIO: TR ratio value (default: 5.0)
     -w DIR | --work-dir DIR: working directory for intermediate files (default: output_directory/Supplementary). Three subdirectories will be created inside the working directory: denoise, gnlc, t2fit.
     -nmd | --noise-mask-dir DIR: directory containing noise masks (default: output_directory/manualNoiseMasks, only used for 3T data)
-    --d | --delete-workdir: delete working directories after processing
+    -pw | --preserve-workdir: preserve working directories after processing (default: working directories are deleted)
     --dry-run: show commands that would be executed without actually submitting jobs
 
 ARGUMENTS:
@@ -53,7 +53,7 @@ EXAMPLES:
     $(basename $0) -cont /path/to/container.sif Prisma /data/input /data/output
     $(basename $0) -cont /path/to/container.sif -b 3 -fa 20 -tr 6 Terra /data/input /data/output
     $(basename $0) -cont /path/to/container.sif -b 3 -fa 20 -tr 6 --noise-mask-dir /data/noise_masks Terra /data/input /data/output
-    $(basename $0) -cont /path/to/container.sif -w /scratch/temp Prisma /data/input /data/output
+    $(basename $0) -cont /path/to/container.sif -w /scratch/temp --preserve-workdir Prisma /data/input /data/output
     $(basename $0) -cont /path/to/container.sif -sub \"sub-001,sub-002\" Prisma /data/input /data/output
     $(basename $0) -cont /path/to/container.sif -sub \"sub-001\" -ses \"ses-01,ses-02\" Terra /data/input /data/output
     $(basename $0) -cont /path/to/container.sif --dry-run -t 10 Prisma_fit /data/input /data/output
@@ -66,7 +66,7 @@ AUTHOR:
 # Default parameters
 delay=1
 dry_run=false
-delete_workdir=false
+delete_workdir=true
 scanner_name=""
 parent_dir=""
 output_dir=""
@@ -122,8 +122,8 @@ while [[ $# -gt 0 ]]; do
             noise_mask_dir="$2"
             shift 2
             ;;
-        --d|--delete-workdir)
-            delete_workdir=true
+        -pw|--preserve-workdir)
+            delete_workdir=false
             shift
             ;;
         --dry-run)
@@ -384,7 +384,7 @@ if [[ -n "$work_dir" ]]; then
 else
     echo "  Working directory: $output_directory/Supplementary"
 fi
-echo "Working directory cleanup: $(if [[ "$delete_workdir" == "true" ]]; then echo "ENABLED"; else echo "DISABLED"; fi)"
+echo "Working directory cleanup: $(if [[ "$delete_workdir" == "true" ]]; then echo "ENABLED (default)"; else echo "DISABLED"; fi)"
 if [[ ${#subject_array[@]} -gt 0 ]]; then
     echo "Subjects filter: ${subject_array[*]}"
     if [[ ${#session_array[@]} -gt 0 ]]; then
@@ -935,6 +935,8 @@ echo "Processing pipeline per session:"
 echo "  1. Denoising → 2. Gradient non-linearity correction → 3. B1+ correction and T2 fitting"
 if [[ "$delete_workdir" == "true" ]]; then
     echo "  4. Session cleanup → 5. Final cleanup (after all sessions)"
+else
+    echo "  Working directories will be preserved (--preserve-workdir specified)"
 fi
 if [[ "$dry_run" == "false" ]]; then
     echo "Check job status with: squeue -u \$USER"
