@@ -22,6 +22,7 @@ OPTIONS:
     -b FIELD | --magnetic-field FIELD: magnetic field strength in Tesla (default: 7)
     -fa ANGLE | --flip-angle ANGLE: flip angle in degrees (default: 55.0)
     -tr RATIO | --tr-ratio RATIO: TR ratio value (default: 5.0)
+    -w DIR | --work-dir DIR: working directory for intermediate files (default: output_directory/Supplementary). Three subdirectories will be created inside the working directory: denoise, gnlc, t2fit.
     --d | --delete-workdir: delete working directories after processing
     --dry-run: show commands that would be executed without actually submitting jobs
 
@@ -50,6 +51,7 @@ DESCRIPTION:
 EXAMPLES:
     $(basename $0) -cont /path/to/container.sif Prisma /data/input /data/output
     $(basename $0) -cont /path/to/container.sif -b 3 -fa 20 -tr 6 Terra /data/input /data/output
+    $(basename $0) -cont /path/to/container.sif -w /scratch/temp Prisma /data/input /data/output
     $(basename $0) -cont /path/to/container.sif -sub \"sub-001,sub-002\" Prisma /data/input /data/output
     $(basename $0) -cont /path/to/container.sif -sub \"sub-001\" -ses \"ses-01,ses-02\" Terra /data/input /data/output
     $(basename $0) -cont /path/to/container.sif --dry-run -t 10 Prisma_fit /data/input /data/output
@@ -66,6 +68,7 @@ delete_workdir=false
 scanner_name=""
 parent_dir=""
 output_dir=""
+work_dir=""
 subjects=""
 sessions=""
 magnetic_field=7
@@ -106,6 +109,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -tr|--tr-ratio)
             tr_ratio="$2"
+            shift 2
+            ;;
+        -w|--work-dir)
+            work_dir="$2"
             shift 2
             ;;
         --d|--delete-workdir)
@@ -242,6 +249,13 @@ gnlc_dir="/data/u_kuegler_software/git/batch_gnlc/correct_MagOnly/"
 denoise_script="$script_dir/slurm_denoise_nbc.sh"
 gnlc_script="$gnlc_dir/call_slurm_batch_magn.sh" # calls SLURM script
 t2fit_script="$script_dir/slurm_b1corr_t2fit.sh" 
+session_cleanup_script="$script_dir/slurm_cleanup_session.sh"
+final_cleanup_script="$script_dir/slurm_cleanup_final.sh"
+
+# Define paths to SLURM bridge/intermediate scripts
+gnlc_mese_bridge_script="$script_dir/slurm_bridge_gnlc_mese.sh"
+gnlc_afi_bridge_script="$script_dir/slurm_bridge_gnlc_afi.sh"
+final_cleanup_bridge_script="$script_dir/slurm_bridge_cleanup_final.sh"
 
 if [[ ! -f "$denoise_script" ]]; then
     echo "Error: Denoising SLURM script not found at $denoise_script"
@@ -257,6 +271,32 @@ if [[ ! -f "$t2fit_script" ]]; then
     echo "Error: T2 fitting SLURM script not found at $t2fit_script"
     exit 1
 fi
+
+if [[ ! -f "$session_cleanup_script" ]]; then
+    echo "Error: Session cleanup SLURM script not found at $session_cleanup_script"
+    exit 1
+fi
+
+if [[ ! -f "$final_cleanup_script" ]]; then
+    echo "Error: Final cleanup SLURM script not found at $final_cleanup_script"
+    exit 1
+fi
+
+if [[ ! -f "$gnlc_mese_bridge_script" ]]; then
+    echo "Error: GNLC Mese bridge SLURM script not found at $gnlc_mese_bridge_script"
+    exit 1
+fi
+
+if [[ ! -f "$gnlc_afi_bridge_script" ]]; then
+    echo "Error: GNLC AFI bridge SLURM script not found at $gnlc_afi_bridge_script"
+    exit 1
+fi
+
+if [[ ! -f "$final_cleanup_bridge_script" ]]; then
+    echo "Error: Final cleanup bridge SLURM script not found at $final_cleanup_bridge_script"
+    exit 1
+fi
+
 
 # Find all anat directories in the BIDS-like structure
 echo "Searching for anat directories in: $parent_dir"
@@ -314,6 +354,11 @@ echo "  Scanner: $scanner_name"
 echo "  Magnetic field: ${magnetic_field}T"
 echo "  Flip angle: ${flip_angle}°"
 echo "  TR ratio: ${tr_ratio}"
+if [[ -n "$work_dir" ]]; then
+    echo "  Working directory: $work_dir"
+else
+    echo "  Working directory: $output_directory/Supplementary"
+fi
 echo "Working directory cleanup: $(if [[ "$delete_workdir" == "true" ]]; then echo "ENABLED"; else echo "DISABLED"; fi)"
 if [[ ${#subject_array[@]} -gt 0 ]]; then
     echo "Subjects filter: ${subject_array[*]}"
@@ -333,6 +378,31 @@ for anat_path in "${anat_dirs[@]}"; do
 done
 echo "=========================================="
 
+# Create working directory
+if [[ -n "$work_dir" ]]; then
+    working_dir="$work_dir"
+else
+    working_dir="$output_dir/Supplementary"
+fi
+
+if [[ "$dry_run" == "false" ]]; then
+    mkdir -p "$working_dir"
+fi
+
+# create file to store job IDs
+job_id_storage_dir="$working_dir/job_id_files"
+if [[ "$dry_run" == "false" ]]; then
+    mkdir -p "$job_id_storage_dir"
+fi
+
+cleanup_sess_id_file="$job_id_storage_dir/cleanup_session_ids.txt"
+# Create or reset global cleanup file
+if [[ -f "$cleanup_sess_id_file" ]]; then
+    rm -f "$cleanup_sess_id_file"
+fi
+touch "$cleanup_sess_id_file"
+
+
 # Counter for job numbering
 job_counter=1
 total_sessions=${#anat_dirs[@]}
@@ -342,6 +412,7 @@ skipped_sessions=0
 declare -A denoise_job_ids
 declare -A gnlc_job_ids
 declare -A t2fit_job_ids
+session_cleanup_bridge_job_ids=()
 
 # Cycle through each anat directory and submit SLURM jobs
 for anat_path in "${anat_dirs[@]}"; do
@@ -353,20 +424,32 @@ for anat_path in "${anat_dirs[@]}"; do
         subject="${BASH_REMATCH[1]}"
         session="${BASH_REMATCH[2]}"
         
+        # Check for existing .nii files in working directory structure
+        existing_files=$(find "$working_dir"/*/"$subject"/"$session"/anat -maxdepth 1 -name "*.nii*" 2>/dev/null | wc -l)
+        if [[ $existing_files -gt 0 ]]; then
+            echo "  Found $existing_files existing .nii files in $working_dir/*/$subject/$session/anat"
+            echo "  Skipping this session."
+            ((skipped_sessions++))
+            ((job_counter++))
+            continue
+        fi
+
         # Create corresponding directory structure in output
         target_output_dir="$output_dir/$subject/$session/anat"
         if [[ "$dry_run" == "false" ]]; then
             mkdir -p "$target_output_dir"
         fi
         
-        # Create working directory
-        working_dir="$target_output_dir/Supplementary"
-        if [[ "$dry_run" == "false" ]]; then
-            mkdir -p "$working_dir"
-        fi
-        
         # Create unique session identifier
         session_id="${subject}_${session}"
+
+        # Create job ID storage file for this session
+        job_id_file="$job_id_storage_dir/job_ids_${session_id}.txt"
+        # Create or reset job file
+        if [[ -f "$job_id_file" ]]; then
+            rm -f "$job_id_file"
+        fi
+        touch "$job_id_file"
         
         echo "  Subject: $subject, Session: $session"
         echo "  Input directory: $anat_path"
@@ -378,7 +461,9 @@ for anat_path in "${anat_dirs[@]}"; do
         # ================================================================
         echo "  Submitting denoising job..."
 
-        denoise_cmd="sbatch -p short,group_servers,gr_weiskopf \"$denoise_script\" \"$container_path\" \"$subject\" \"$session\" \"$magnetic_field\" \"$parent_dir\" \"$output_dir\""
+        output_dir_denoise="$working_dir/denoise"
+
+        denoise_cmd="sbatch -p short,group_servers,gr_weiskopf \"$denoise_script\" \"$container_path\" \"$subject\" \"$session\" \"$magnetic_field\" \"$parent_dir\" \"$output_dir_denoise\""
 
         if [[ "$dry_run" == "false" ]]; then
             out=$(eval $denoise_cmd)
@@ -390,7 +475,7 @@ for anat_path in "${anat_dirs[@]}"; do
                 denoise_job_ids[$session_id]="$denoise_job_id"
                 echo "    Denoising job ID: $denoise_job_id"
             else
-                echo "    Error: Could not extract job ID from sbatch output"
+                echo "    Error: Could not extract denoising job ID from sbatch output"
                 ((skipped_sessions++))
                 ((job_counter++))
                 continue
@@ -410,129 +495,330 @@ for anat_path in "${anat_dirs[@]}"; do
         denoise_job_id="${denoise_job_ids[$session_id]}"
         
         # define settings for GNLC
-        contrast_mese="_proc-denoisedNbc" # file_pattern="${contrast}*${pattern}"
+        contrast_mese="proc-denoisedNbc" # file_pattern="${contrast}*${pattern}"
         file_pattern_mese="MESE"
-        output_dir_mese="$output_dir" # use the parent output directory here!
 
         contrast_afi="acq-stx4D_TB1" # file_pattern="${contrast}*${pattern}"
         file_pattern_afi="AFI" # has to be chosen like this to avoid the resampled AFI to be included
-        output_dir_afi="$output_dir" # use the parent output directory here!
         
-        # Define GNLC commands
-        gnlc_cmd_mese="bash $gnlc_script -c $contrast_mese -p $file_pattern_mese -sub $subject -ses $session -dep $denoise_job_id $scanner_name $parent_dir $output_dir_mese"
-        gnlc_cmd_afi="bash $gnlc_script -c $contrast_afi -p $file_pattern_afi -sub $subject -ses $session -dep $denoise_job_id $scanner_name $parent_dir $output_dir_afi"
+        output_dir_gnlc="$working_dir/gnlc"
+
+        # Generate unique job IDs for GNLC jobs
+        timestamp=$(date +%s)
+        random_suffix=$((RANDOM % 10000))
+        mese_gnlc_job_name="gnlc_mese_${session_id}_${timestamp}_${random_suffix}"
+        afi_gnlc_job_name="gnlc_afi_${session_id}_${timestamp}_$((random_suffix + 1))"
         
+        # Define GNLC commands with predetermined job IDs
+        # input and output directories are the working directory
+        gnlc_slurm_log_dir="/data/u_kuegler_software/git/r2_map_calculation/logs/gnlc/"
+
+        # container is currently not used in the GNLC script
+        gnlc_cmd_mese="bash $gnlc_script -c $contrast_mese -p $file_pattern_mese -sub $subject -ses $session -job-name $mese_gnlc_job_name -log "$gnlc_slurm_log_dir/gnlc_mese_" $scanner_name $output_dir_denoise $output_dir_gnlc" # -container $container_path
+        gnlc_cmd_afi="bash $gnlc_script -c $contrast_afi -p $file_pattern_afi -sub $subject -ses $session -job-name $afi_gnlc_job_name -log "$gnlc_slurm_log_dir/gnlc_afi_" $scanner_name $output_dir_denoise $output_dir_gnlc" # -container $container_path
+
         if [[ "$dry_run" == "false" ]]; then
-            # Array to collect all job IDs from MESE and AFI GNLC calls
-            all_gnlc_job_ids=()
             
             # ============================================================
-            # MESE GNLC CALL
+            # INTERMEDIATE JOB FOR MESE GNLC
             # ============================================================
-            echo "    Running MESE GNLC call..."
-            gnlc_call_mese=$($gnlc_cmd_mese)
+            echo "    Submitting intermediate job for MESE GNLC ..."
             
-            # Extract job IDs from MESE GNLC call
-            mese_job_ids=()
-            while IFS= read -r line; do
-                if [[ $line =~ Job\ ([0-9]+)\ submitted ]]; then
-                    mese_gnlc_job_id="${BASH_REMATCH[1]}"
-                    mese_job_ids+=("$mese_gnlc_job_id")
-                    all_gnlc_job_ids+=("$mese_gnlc_job_id")
-                    echo "    Captured GNLC job ID (MESE): $mese_gnlc_job_id"
-                fi
-            done <<< "$gnlc_call_mese"
+            # Submit bridge job
+            bridge_mese_gnlc_out=$(sbatch -p short,group_servers,gr_weiskopf \
+                --dependency=afterok:${denoise_job_id} \
+                --job-name=bridge_mese_${session_id} \
+                --output=/data/u_kuegler_software/git/r2_map_calculation/logs/denoise/%j_bridge_mese_${session_id}.out \
+                "$gnlc_mese_bridge_script" \
+                "$gnlc_cmd_mese")
+
+            echo "    $bridge_mese_gnlc_out"
+            echo "    MESE GNLC will use custom job name: $mese_gnlc_job_name"
             
-            # Check if we got any job IDs from MESE call
-            if [[ ${#mese_job_ids[@]} -eq 0 ]]; then
-                echo "    WARNING: No job IDs found in MESE GNLC call script output. Skipping session."
-                ((skipped_sessions++))
-                ((job_counter++))
-                continue
+            # ============================================================
+            # INTERMEDIATE JOB FOR AFI GNLC
+            # ============================================================
+            echo "    Submitting intermediate job for AFI GNLC ..."
+            
+            # Submit bridge job
+            bridge_afi_out=$(sbatch -p short,group_servers,gr_weiskopf \
+                --dependency=afterok:${denoise_job_id} \
+                --job-name=bridge_afi_${session_id} \
+                --output=/data/u_kuegler_software/git/r2_map_calculation/logs/denoise/%j_bridge_afi_${session_id}.out \
+                "$gnlc_afi_bridge_script" \
+                "$gnlc_cmd_afi")
+
+            echo "    $bridge_afi_out"
+            echo "    AFI GNLC will use custom job name: $afi_gnlc_job_name"
+
+            # Store bridge job IDs for this session (to track bridge job completion)
+            gnlc_bridge_job_ids=()
+            
+            # Extract bridge job IDs from bridge job outputs
+            if [[ $bridge_mese_gnlc_out =~ Submitted\ batch\ job\ ([0-9]+) ]]; then
+                bridge_mese_id="${BASH_REMATCH[1]}"
+                gnlc_bridge_job_ids+=("$bridge_mese_id")
             fi
             
-            # ============================================================
-            # AFI GNLC CALL (parallel to MESE)
-            # ============================================================
-            echo "    Running AFI GNLC call..."
-
-            gnlc_call_afi=$($gnlc_cmd_afi)
-
-            # Extract job IDs from AFI GNLC call
-            afi_job_ids=()
-            while IFS= read -r line; do
-                if [[ $line =~ Job\ ([0-9]+)\ submitted ]]; then
-                    afi_gnlc_job_id="${BASH_REMATCH[1]}"
-                    afi_job_ids+=("$afi_gnlc_job_id")
-                    all_gnlc_job_ids+=("$afi_gnlc_job_id")
-                    echo "    Captured GNLC job ID (AFI): $afi_gnlc_job_id"
-                fi
-            done <<< "$gnlc_call_afi"
-
-            # Check if we got any job IDs from AFI call
-            if [[ ${#afi_job_ids[@]} -eq 0 ]]; then
-                echo "    WARNING: No job IDs found in AFI GNLC call script output. Skipping session."
-                ((skipped_sessions++))
-                ((job_counter++))
-                continue
+            if [[ $bridge_afi_out =~ Submitted\ batch\ job\ ([0-9]+) ]]; then
+                bridge_afi_id="${BASH_REMATCH[1]}"
+                gnlc_bridge_job_ids+=("$bridge_afi_id")
             fi
-
-            # Store all job IDs for this session (comma-separated for multiple jobs)
-            IFS=',' gnlc_job_ids_string="${all_gnlc_job_ids[*]}"
-            gnlc_job_ids[$session_id]="$gnlc_job_ids_string"
-            echo "    All GNLC job IDs: ${all_gnlc_job_ids[*]} (depends on successful job: $denoise_job_id)"
+            
+            echo "    Bridge job IDs: ${gnlc_bridge_job_ids[*]} (will trigger GNLC jobs: $mese_gnlc_job_name, $afi_gnlc_job_name)"
+            
+            # Store for T2 fitting dependency
+            gnlc_job_ids[$session_id]="${mese_gnlc_job_name},${afi_gnlc_job_name}"
         else
-            echo "    DRY RUN: Would run GNLC call script for MESE data with the following command:"
-            echo "    $gnlc_cmd_mese"
-            echo "    DRY RUN: Would run GNLC call script for AFI data with the following command:"
-            echo "    $gnlc_cmd_afi"
-            echo "    DRY RUN: Jobs would depend on successful denoising job: $denoise_job_id"
-            gnlc_job_ids[$session_id]="DRY_RUN_GNLC_JOB_ID1,DRY_RUN_GNLC_JOB_ID2"
+            echo "    DRY RUN: Would generate GNLC job names:"
+            echo "      MESE GNLC Job name: $mese_gnlc_job_name"
+            echo "      AFI GNLC Job name: $afi_gnlc_job_name"
+            echo "    DRY RUN: Would submit bridge jobs with commands:"
+            echo "      MESE: $gnlc_cmd_mese"
+            echo "      AFI: $gnlc_cmd_afi"
+            echo "    DRY RUN: Bridge jobs would depend on successful denoising job: $denoise_job_id"
+            gnlc_job_ids[$session_id]="${mese_gnlc_job_name},${afi_gnlc_job_name}"
+            gnlc_bridge_job_ids=("DRY_RUN_BRIDGE_MESE_ID" "DRY_RUN_BRIDGE_AFI_ID")
         fi 
 
         
         # ================================================================
         # JOB 3: B1+ CORRECTION and T2 FITTING
         # ================================================================
-        echo "  Submitting B1+ correction and T2 fitting job..."
+        echo "  Creating T2 fitting bridge job..."
 
-        # Get dependency on all GNLC jobs
-        gnlc_job_ids_string="${gnlc_job_ids[$session_id]}"
-        IFS=',' read -ra gnlc_job_ids_array <<< "$gnlc_job_ids_string"
-        
-        # Build dependency string for multiple jobs
-        if [[ ${#gnlc_job_ids_array[@]} -gt 1 ]]; then
-            # Multiple jobs - create dependency on all of them
-            dependency_list=$(IFS=':'; echo "${gnlc_job_ids_array[*]}")
-            t2fit_dependency="--dependency=afterok:$dependency_list"
-        else
-            # Single job
-            t2fit_dependency="--dependency=afterok:${gnlc_job_ids_array[0]}"
-        fi
+        # takes input from output_dir_gnlc (and one file from output_dir_denoise)
+        # uses working dir: working_dir_t2fit
+        # outputs results to output_dir
+        working_dir_t2fit="$working_dir/t2fit"
 
+        # Generate unique job name for T2 fitting job
+        t2fit_job_name="t2fit_${session_id}_${timestamp}"
 
-        t2fit_cmd="sbatch -p short,group_servers,gr_weiskopf $t2fit_dependency \"$t2fit_script\" \"$container_path\" \"$subject\" \"$session\" \"$magnetic_field\" \"$parent_dir\" \"$output_dir\" \"$tr_ratio\" \"$flip_angle\" \"$delete_workdir\""
-        
         if [[ "$dry_run" == "false" ]]; then
-            out=$(eval $t2fit_cmd)
-            echo "    $out"
+            # Build dependency on bridge jobs
+            bridge_dependency=""
+            if [[ ${#gnlc_bridge_job_ids[@]} -gt 1 ]]; then
+                dependency_list=$(IFS=':'; echo "${gnlc_bridge_job_ids[*]}")
+                bridge_dependency="--dependency=afterok:$dependency_list"
+            elif [[ ${#gnlc_bridge_job_ids[@]} -eq 1 ]]; then
+                bridge_dependency="--dependency=afterok:${gnlc_bridge_job_ids[0]}"
+            fi
             
-            # Extract job ID from sbatch output
-            if [[ $out =~ Submitted\ batch\ job\ ([0-9]+) ]]; then
-                t2fit_job_id="${BASH_REMATCH[1]}"
-                t2fit_job_ids[$session_id]="$t2fit_job_id"
-                echo "    T2 fitting job ID: $t2fit_job_id (depends on successful jobs: ${gnlc_job_ids_array[*]})"
+            # Create T2 fitting bridge script
+            t2fit_bridge_script="/tmp/bridge_t2fit_${session_id}_${timestamp}.sh"
+            cat > "$t2fit_bridge_script" << EOF
+#!/bin/bash
+#SBATCH $bridge_dependency
+#SBATCH --job-name=bridge_t2fit_${session_id}
+#SBATCH --time=30
+#SBATCH --mem=1G
+#SBATCH --output=/data/u_kuegler_software/git/r2_map_calculation/logs/denoise/%j_bridge_t2fit_${session_id}.out
+
+t2fit_job_name="$1"
+
+echo "T2 fitting bridge job: Waiting for GNLC bridge jobs completion"
+echo "Bridge jobs completed, waiting 10 seconds for GNLC jobs to start..."
+sleep 10
+
+echo "Extracting actual GNLC job IDs from squeue..."
+
+# Function to get job ID by job name
+get_job_id_by_name() {
+    local job_name=\$1
+    local max_attempts=30
+    local attempt=1
+    
+    while [[ \$attempt -le \$max_attempts ]]; do
+        # Get job ID for the specified job name
+        job_id=\$(squeue -u \$USER --name="\$job_name" --noheader --format="%i" | head -n1 | tr -d ' ')
+        
+        if [[ -n "\$job_id" && "\$job_id" =~ ^[0-9]+\$ ]]; then
+            echo "\$job_id"
+            return 0
+        fi
+        
+        echo "Attempt \$attempt: Job '\$job_name' not found in queue, waiting 5 seconds..." >&2
+        sleep 5
+        ((attempt++))
+    done
+    
+    echo "Error: Could not find job ID for job name '\$job_name' after \$max_attempts attempts" >&2
+    return 1
+}
+
+# Get actual job IDs
+mese_gnlc_job_id=\$(get_job_id_by_name "$mese_gnlc_job_name")
+afi_gnlc_job_id=\$(get_job_id_by_name "$afi_gnlc_job_name")
+
+if [[ -z "\$mese_gnlc_job_id" || -z "\$afi_gnlc_job_id" ]]; then
+    echo "Error: Could not extract GNLC job IDs"
+    echo "MESE GNLC job ID: \$mese_gnlc_job_id"
+    echo "AFI GNLC job ID: \$afi_gnlc_job_id"
+    exit 1
+fi
+
+echo "Successfully extracted GNLC job IDs:"
+echo "MESE GNLC job ID: \$mese_gnlc_job_id"
+echo "AFI GNLC job ID: \$afi_gnlc_job_id"
+
+# Submit T2 fitting job with dependency on actual GNLC job IDs
+t2fit_dependency="--dependency=afterok:\${mese_gnlc_job_id}:\${afi_gnlc_job_id}"
+t2fit_cmd="sbatch -p short,group_servers,gr_weiskopf \${t2fit_dependency} --gpus=1 --job-name=$t2fit_job_name \"$t2fit_script\" \"$container_path\" \"$subject\" \"$session\" \"$magnetic_field\" \"$output_dir_gnlc\" \"$working_dir_t2fit\" \"$output_dir\" \"$tr_ratio\" \"$flip_angle\" \"$output_dir_denoise\" \"$delete_workdir\""
+
+echo "Submitting T2 fitting job with command:"
+echo "\$t2fit_cmd"
+
+echo "------------------------------"
+t2fit_out=\$(eval \$t2fit_cmd)
+# echo "T2 fitting job submission result: \$t2fit_out"
+
+# Extract and log T2 fitting job ID
+if [[ \$t2fit_out =~ Submitted\ batch\ job\ ([0-9]+) ]]; then
+    t2fit_job_id="\${BASH_REMATCH[1]}"
+    echo "T2 fitting job ID: \$t2fit_job_id (job name: $t2fit_job_name, depends on GNLC jobs: \$mese_gnlc_job_id, \$afi_gnlc_job_id)"
+    # echo "T2FIT_JOB_ID=\$t2fit_job_id" >> "$job_id_file"
+else
+    echo "Error: Could not extract T2 fitting job ID from sbatch output"
+    exit 1
+fi
+
+# Clean up bridge script
+rm -f "$t2fit_bridge_script"
+EOF
+            
+            # Submit T2 fitting bridge job
+            echo "    Submitting T2 fitting bridge job..."
+            t2fit_bridge_out=$(sbatch -p short,group_servers,gr_weiskopf "$t2fit_bridge_script" "$t2fit_job_name")
+            echo "    $t2fit_bridge_out"
+            
+            declare -A t2fit_bridge_job_ids
+
+            if [[ $t2fit_bridge_out =~ Submitted\ batch\ job\ ([0-9]+) ]]; then
+                t2fit_bridge_id="${BASH_REMATCH[1]}"
+                echo "    T2 fitting bridge job ID: $t2fit_bridge_id (depends on GNLC bridge jobs: ${gnlc_bridge_job_ids[*]})"
+                echo "    This bridge job will extract GNLC job IDs and submit the B1+ correction and T2 fitting job"
+                t2fit_bridge_job_ids[$session_id]="$t2fit_bridge_id"
             else
-                echo "    Error: Could not extract job ID from sbatch output"
+                echo "    Error: Could not extract T2 fitting bridge job ID"
                 ((skipped_sessions++))
                 ((job_counter++))
                 continue
             fi
         else
-            echo "    DRY RUN: Would submit T2 fitting job with command:" 
-            echo "    $t2fit_cmd"
-            echo "    DRY RUN: Job would depend on successful GNLC jobs: ${gnlc_job_ids_array[*]}"
-            t2fit_job_ids[$session_id]="DRY_RUN_T2FIT_JOB_ID"
+            echo "    DRY RUN: Would create T2 fitting bridge job that:"
+            echo "      - Depends on bridge jobs: ${gnlc_bridge_job_ids[*]}"
+            echo "      - Waits 10 seconds for GNLC jobs to start"
+            echo "      - Extracts actual job IDs for: $mese_gnlc_job_name, $afi_gnlc_job_name"
+            echo "      - Submits T2 fitting job with dependency on extracted GNLC job IDs"
+            t2fit_bridge_job_ids[$session_id]="DRY_RUN_T2FIT_BRIDGE_JOB_ID"
+        fi
+
+        # ================================================================
+        # JOB 4: SESSION CLEANUP (if delete_workdir is enabled)
+        # ================================================================
+        if [[ "$delete_workdir" == "true" ]]; then
+            echo "  Creating session cleanup bridge job..."
+            
+            if [[ "$dry_run" == "false" ]]; then
+                # Create session cleanup bridge script
+                cleanup_bridge_script="/tmp/bridge_cleanup_${session_id}_${timestamp}.sh"
+                cat > "$cleanup_bridge_script" << EOF
+#!/bin/bash
+#SBATCH --dependency=afterok:$t2fit_bridge_id
+#SBATCH --job-name=bridge_cleanup_${session_id}
+#SBATCH --time=30
+#SBATCH --mem=1G
+#SBATCH --output=/data/u_kuegler_software/git/r2_map_calculation/logs/denoise/%j_bridge_cleanup_${session_id}.out
+
+t2fit_job_name="$1"
+
+
+echo "Cleanup bridge job: Waiting for T2 fitting bridge job completion"
+echo "T2 fitting bridge job completed, waiting 10 seconds for T2 fitting job to start..."
+sleep 10
+
+echo "Extracting actual T2 fitting job ID from squeue..."
+
+# Function to get job ID by job name
+get_job_id_by_name() {
+    local job_name=\$1
+    local max_attempts=30
+    local attempt=1
+    
+    while [[ \$attempt -le \$max_attempts ]]; do
+        # Get job ID for the specified job name
+        job_id=\$(squeue -u \$USER --name="\$job_name" --noheader --format="%i" | head -n1 | tr -d ' ')
+        
+        if [[ -n "\$job_id" && "\$job_id" =~ ^[0-9]+\$ ]]; then
+            echo "\$job_id"
+            return 0
+        fi
+        
+        echo "Attempt \$attempt: Job '\$job_name' not found in queue, waiting 5 seconds..." >&2
+        sleep 5
+        ((attempt++))
+    done
+    
+    echo "Error: Could not find job ID for job name '\$job_name' after \$max_attempts attempts" >&2
+    return 1
+}
+
+# Get actual T2 fitting job ID
+t2fit_job_id=\$(get_job_id_by_name "$t2fit_job_name")
+
+if [[ -z "\$t2fit_job_id" ]]; then
+    echo "Error: Could not extract T2 fitting job ID"
+    echo "T2 fitting job name: $t2fit_job_name"
+    exit 1
+fi
+
+echo "Successfully extracted T2 fitting job ID: \$t2fit_job_id"
+
+# Submit session cleanup job with dependency on actual T2 fitting job ID
+cleanup_dependency="--dependency=afterok:\$t2fit_job_id"
+cleanup_cmd="sbatch -p short,group_servers,gr_weiskopf \${cleanup_dependency} --job-name=cleanup_${session_id} --time=10 --mem=1G --output=/data/u_kuegler_software/git/r2_map_calculation/logs/denoise/%j_cleanup_${subject}_${session}.out \"$session_cleanup_script\" \"$subject\" \"$session\" \"$output_dir_denoise\" \"$output_dir_gnlc\" \"$working_dir_t2fit\""
+
+echo "Submitting session cleanup job with command:"
+echo "\$cleanup_cmd"
+
+echo "------------------------------"
+cleanup_out=\$(eval \$cleanup_cmd)
+# echo "Session cleanup job submission result: \$cleanup_out"
+
+# Extract and log cleanup job ID
+if [[ \$cleanup_out =~ Submitted\ batch\ job\ ([0-9]+) ]]; then
+    cleanup_job_id="\${BASH_REMATCH[1]}"
+    echo "Session cleanup job ID: \$cleanup_job_id (depends on T2 fitting job: \$t2fit_job_id)"
+    echo "\$cleanup_job_id" >> "$cleanup_sess_id_file"
+else
+    echo "Error: Could not extract session cleanup job ID from sbatch output"
+    exit 1
+fi
+
+# Clean up bridge script
+rm -f "$cleanup_bridge_script"
+EOF
+                
+                # Submit session cleanup bridge job
+                cleanup_bridge_out=$(sbatch -p short,group_servers,gr_weiskopf "$cleanup_bridge_script" "$t2fit_job_name")
+                echo "    $cleanup_bridge_out"
+                
+                if [[ $cleanup_bridge_out =~ Submitted\ batch\ job\ ([0-9]+) ]]; then
+                    cleanup_bridge_job_id="${BASH_REMATCH[1]}"
+                    session_cleanup_bridge_job_ids+=("$cleanup_bridge_job_id")
+                    echo "    Session cleanup bridge job ID: $cleanup_bridge_job_id (depends on T2 fitting bridge job: $t2fit_bridge_id)"
+                    echo "    This bridge job will extract T2 fitting job ID and submit session cleanup job"
+                else
+                    echo "    Warning: Could not extract session cleanup bridge job ID from sbatch output"
+                fi
+            else
+                echo "    DRY RUN: Would create session cleanup bridge job that:"
+                echo "      - Depends on T2 fitting bridge job completion"
+                echo "      - Extracts actual T2 fitting job ID using job name: $t2fit_job_name"
+                echo "      - Submits cleanup job with dependency on extracted T2 fitting job ID"
+                session_cleanup_bridge_job_ids+=("DRY_RUN_SESSION_CLEANUP_BRIDGE_${session_id}")
+            fi
         fi
         
         # Add delay between session processing (except for the last session)
@@ -550,7 +836,65 @@ for anat_path in "${anat_dirs[@]}"; do
         ((skipped_sessions++))
         continue
     fi
+
 done
+
+# ================================================================
+# FINAL CLEANUP JOB (if delete_workdir is enabled and session cleanup jobs exist)
+# ================================================================
+if [[ "$delete_workdir" == "true" && \
+    ${#session_cleanup_bridge_job_ids[@]} -gt 0 && \
+    $((total_sessions - skipped_sessions)) -gt 0 ]]; then
+    
+    echo
+    echo "--------------------------------------"
+    echo "Creating final cleanup bridge job for remaining parts of the working directory..."
+    
+    if [[ "$dry_run" == "false" ]]; then        
+        # Build dependency string for all session cleanup jobs
+        if [[ ${#session_cleanup_bridge_job_ids[@]} -gt 1 ]]; then
+            dependency_list=$(IFS=':'; echo "${session_cleanup_bridge_job_ids[*]}")
+            final_cleanup_bridge_dependency="--dependency=afterok:$dependency_list"
+        elif [[ ${#session_cleanup_bridge_job_ids[@]} -eq 1 ]]; then
+            final_cleanup_bridge_dependency="--dependency=afterok:${session_cleanup_bridge_job_ids[0]}"
+        fi
+
+        # Submit final cleanup bridge job
+        final_cleanup_bridge_out=$(sbatch -p short,group_servers,gr_weiskopf "$final_cleanup_bridge_dependency" "$final_cleanup_bridge_script" \
+            "$final_cleanup_script" \
+            "$output_dir_denoise" \
+            "$output_dir_gnlc" \
+            "$working_dir_t2fit" \
+            "$job_id_storage_dir" \
+            "$working_dir" \
+            "$cleanup_sess_id_file")
+
+        echo "$final_cleanup_bridge_out"
+        
+        if [[ $final_cleanup_bridge_out =~ Submitted\ batch\ job\ ([0-9]+) ]]; then
+            final_cleanup_bridge_job_id="${BASH_REMATCH[1]}"
+            echo "Final cleanup bridge job ID: $final_cleanup_bridge_job_id (depends on session cleanup bridge jobs: ${session_cleanup_bridge_job_ids[*]})"
+            echo "This bridge job will extract cleanup job IDs and submit the final cleanup job with proper dependencies"
+        else
+            echo "Warning: Could not extract final cleanup bridge job ID from sbatch output"
+        fi
+
+    else
+        echo "DRY RUN: Would create final cleanup bridge job that:"
+        echo "  - Depends on ${#session_cleanup_bridge_job_ids[@]} session cleanup bridge jobs: ${session_cleanup_bridge_job_ids[*]}"
+        echo "  - Reads cleanup job IDs from: $cleanup_sess_id_file"
+        echo "  - Removes working directories: $output_dir_denoise, $output_dir_gnlc, $working_dir_t2fit, $working_dir"
+    fi
+elif [[ "$delete_workdir" == "true" ]]; then
+    echo
+    if [[ ${#session_cleanup_bridge_job_ids[@]} -eq 0 || $((total_sessions - skipped_sessions)) -eq 0 ]]; then
+        echo "> No session cleanup jobs were created or no sessions were processed."
+        echo "> No cleanup needed"
+    fi
+fi
+
+
+
 
 echo
 echo "=========================================="
@@ -560,6 +904,9 @@ echo "Sessions skipped: $skipped_sessions"
 echo "Sessions processed: $((total_sessions - skipped_sessions))"
 echo "Processing pipeline per session:"
 echo "  1. Denoising → 2. Gradient non-linearity correction → 3. B1+ correction and T2 fitting"
+if [[ "$delete_workdir" == "true" ]]; then
+    echo "  4. Session cleanup → 5. Final cleanup (after all sessions)"
+fi
 if [[ "$dry_run" == "false" ]]; then
     echo "Check job status with: squeue -u \$USER"
     echo "Monitor logs in the respective SLURM script log directories"
