@@ -149,5 +149,10 @@ echo "Previously saved T2 fit job: $T2FIT_JOB_ID"
 # Current command:
 
 ```
+# 7T
 ./t2_processing_main.sh -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif --d -b 7 -sub sub-004 -ses ses-04 Terra /data/pt_02262/data/TH_bids/bids/ /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2_autom/
+
+# 3T
+./t2_processing_main.sh -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif --d -b 3 -fa 60.0 -tr 3.0 -sub sub-001 -ses ses-05 Terra /data/pt_02262/data/TH_bids/bids/ /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2_autom/
+# --nmd /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2_autom/manualNoiseMasks
 ```

@@ -5,7 +5,7 @@
 # This script runs T2 denoising and noise bias correction processing
 # on a SLURM cluster for a single subject/session.
 #
-# Usage: sbatch slurm_denoise_nbc.sh <CONTAINER_PATH> <SUBJECT> <SESSION> <MAGNETIC_FIELD> <PARENT_DIR> <OUTPUT_DIR>
+# Usage: sbatch slurm_denoise_nbc.sh <CONTAINER_PATH> <SUBJECT> <SESSION> <MAGNETIC_FIELD> <PARENT_DIR> <OUTPUT_DIR> [NOISEMASK_DIR]
 #
 # Arguments:
 #   CONTAINER_PATH  - Path to Singularity container file (e.g., /path/to/pymritools.sif)
@@ -14,6 +14,7 @@
 #   MAGNETIC_FIELD  - Magnetic field strength in Tesla (e.g., 7)
 #   PARENT_DIR      - Path to parent BIDS directory containing raw data
 #   OUTPUT_DIR      - Path to output directory for processed results
+#   NOISEMASK_DIR   - (Optional) Path to directory containing manual noise mask files (required for 3T data)
 #
 # The script processes MESE and AFI data using PyMRItools with the following features:
 #   - MP-PCA denoising
@@ -35,6 +36,7 @@ SESSION="$3"
 MAGNETIC_FIELD="$4"
 PARENT_DIR="$5"
 OUTPUT_DIR="$6"
+NOISEMASK_DIR="$7"  # Optional parameter
 
 
 echo "--------"
@@ -44,6 +46,9 @@ echo "Session: ${SESSION}"
 echo "Magnetic Field: ${MAGNETIC_FIELD}T"
 echo "Parent Directory: ${PARENT_DIR}"
 echo "Output Directory: ${OUTPUT_DIR}"
+if [[ -n "$NOISEMASK_DIR" ]]; then
+    echo "Noise Mask Directory: ${NOISEMASK_DIR}"
+fi
 echo "--------"
 
 # # Build python command as array
@@ -57,6 +62,11 @@ cmd_args=(
     "--output-dir" "${OUTPUT_DIR}"
 )
 
+# Add noise mask directory if provided
+if [[ -n "$NOISEMASK_DIR" ]]; then
+    cmd_args+=("--noise-mask-dir" "${NOISEMASK_DIR}")
+fi
+
 
 singularity exec "${CONTAINER_PATH}" "${cmd_args[@]}"
 
@@ -64,12 +74,23 @@ singularity exec "${CONTAINER_PATH}" "${cmd_args[@]}"
 # source ~/bash.conda
 # conda activate mri_tools_env
 
-# python3 ${t2_script} \
-#     --subject "${SUBJECT}" \
-#     --session "${SESSION}" \
-#     --field-strength "${MAGNETIC_FIELD}" \
-#     --parent-dir "${PARENT_DIR}" \
-#     --output-dir "${OUTPUT_DIR}" 
+# # Build python command as array
+# cmd_args=(
+#     "python3" "${t2_script}"
+#     "--subject" "${SUBJECT}"
+#     "--session" "${SESSION}"
+#     "--field-strength" "${MAGNETIC_FIELD}"
+#     "--parent-dir" "${PARENT_DIR}"
+#     "--output-dir" "${OUTPUT_DIR}"
+# )
+# 
+# # Add noise mask directory if provided
+# if [[ -n "$NOISEMASK_DIR" ]]; then
+#     cmd_args+=("--noise-mask-dir" "${NOISEMASK_DIR}")
+# fi
+#
+# # Run the command
+# "${cmd_args[@]}" 
 
 
 

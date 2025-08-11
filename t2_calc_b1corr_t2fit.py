@@ -337,24 +337,36 @@ del json_source, json_dest
 # the calculated afi error maps to calculate 
 # a combined B1 regularization map.
 
-# we allow for max 10 % relative error in the afi 
-# and do a linear weighting between afi b1 and emc b1, 
-# essentially if rel afi error is 0 we trust the afi, 
-# if relative error of afi is 10% we trust the emc
-print("B1 regularization based on AFI relative error")
-regularization_factor = 1 - torch.clip(b1_afi_re_rel_err, 0, 10) / 10
-b1_reg = regularization_factor * b1_afi_re + (1 - regularization_factor) * b1_emc
-b1_reg = torch.from_numpy(gaussian_filter(b1_reg.numpy(), sigma=2))
+if magnetic_field == 7.0:
+    # we allow for max 10 % relative error in the afi 
+    # and do a linear weighting between afi b1 and emc b1, 
+    # essentially if rel afi error is 0 we trust the afi, 
+    # if relative error of afi is 10% we trust the emc
+    print("B1 regularization based on AFI relative error")
+    regularization_factor = 1 - torch.clip(b1_afi_re_rel_err, 0, 10) / 10
+    b1_reg = regularization_factor * b1_afi_re + (1 - regularization_factor) * b1_emc
+    b1_reg = torch.from_numpy(gaussian_filter(b1_reg.numpy(), sigma=2))
+    fname_b1_reg = f"{subj}_{sess}_proc-AFIregEMC_{b1_suffix}"
+    description_text_b1reg = f"B1+ map created from preprocessed AFI images regularized with EMC B1+ estimate, {helper.get_timestamp()}"
+elif magnetic_field == 3.0:
+    # We know from experience that the EMC B1+ estimate is quite good for 3T data.
+    # Therefore, we don't use the AFI B1+ estimate at all here.
+    # TODO: This decision should be systematically evaluated and potentially adjusted.
+    b1_reg = torch.from_numpy(gaussian_filter(b1_emc.numpy(), sigma=2))
+    fname_b1_reg = f"{subj}_{sess}_proc-EMC_{b1_suffix}"
+    description_text_b1reg = f"B1+ map estimated using echo-modulation curve (EMC) approach, {helper.get_timestamp()}"
+else: 
+    raise ValueError(f"Unsupported magnetic field strength: {magnetic_field}. Supported values are 3.0 and 7.0 Tesla.")
 
 
 # we can save this for reference
-fname_b1_reg = f"{subj}_{sess}_proc-AFIregEMC_{b1_suffix}"
+# fname_b1_reg defined above
 _ = helper.save_nifti(output_path=working_dir, 
                       filename=fname_b1_reg, 
                       data=b1_reg, 
                       affine=b1_afi_re_aff, 
                       header=b1_afi_re_hdr,
-                      description=f"B1+ map created from preprocessed AFI images regularized with EMC B1+ estimate, {helper.get_timestamp()}")
+                      description=description_text_b1reg)
 # Copy the JSON file
 json_source = path_afi_gnlc.with_suffix(".json")
 json_dest = working_dir.joinpath(fname_b1_reg).with_suffix(".json")
@@ -435,7 +447,7 @@ _ = helper.save_nifti(output_path=target_output_dir,
                       data=b1_reg_fit,
                       affine=b1_afi_re_aff,
                       header=b1_afi_re_hdr,
-                      description=f"B1+ map created from preprocessed AFI images regularized with EMC B1+ estimate, {helper.get_timestamp()}")
+                      description=description_text_b1reg)
 # Copy the JSON file
 json_source = path_afi_gnlc.with_suffix(".json")
 json_dest = target_output_dir.joinpath(fname_b1_reg_fit).with_suffix(".json")

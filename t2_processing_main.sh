@@ -23,6 +23,7 @@ OPTIONS:
     -fa ANGLE | --flip-angle ANGLE: flip angle in degrees (default: 55.0)
     -tr RATIO | --tr-ratio RATIO: TR ratio value (default: 5.0)
     -w DIR | --work-dir DIR: working directory for intermediate files (default: output_directory/Supplementary). Three subdirectories will be created inside the working directory: denoise, gnlc, t2fit.
+    -nmd | --noise-mask-dir DIR: directory containing noise masks (default: output_directory/manualNoiseMasks, only used for 3T data)
     --d | --delete-workdir: delete working directories after processing
     --dry-run: show commands that would be executed without actually submitting jobs
 
@@ -51,6 +52,7 @@ DESCRIPTION:
 EXAMPLES:
     $(basename $0) -cont /path/to/container.sif Prisma /data/input /data/output
     $(basename $0) -cont /path/to/container.sif -b 3 -fa 20 -tr 6 Terra /data/input /data/output
+    $(basename $0) -cont /path/to/container.sif -b 3 -fa 20 -tr 6 --noise-mask-dir /data/noise_masks Terra /data/input /data/output
     $(basename $0) -cont /path/to/container.sif -w /scratch/temp Prisma /data/input /data/output
     $(basename $0) -cont /path/to/container.sif -sub \"sub-001,sub-002\" Prisma /data/input /data/output
     $(basename $0) -cont /path/to/container.sif -sub \"sub-001\" -ses \"ses-01,ses-02\" Terra /data/input /data/output
@@ -75,6 +77,7 @@ magnetic_field=7
 flip_angle=55.0
 tr_ratio=5.0
 container_path=""
+noise_mask_dir=""
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -113,6 +116,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -w|--work-dir)
             work_dir="$2"
+            shift 2
+            ;;
+        -nmd|--noise-mask-dir)
+            noise_mask_dir="$2"
             shift 2
             ;;
         --d|--delete-workdir)
@@ -218,6 +225,21 @@ fi
 if ! [[ "$tr_ratio" =~ ^[0-9]+\.?[0-9]*$ ]]; then
     echo "Error: TR ratio must be a number"
     exit 1
+fi
+
+# Validate noise mask directory requirement for 3T data
+if [[ "$magnetic_field" == "3" || "$magnetic_field" == "3.0" ]]; then
+    # Set default noise mask directory if not specified
+    if [[ -z "$noise_mask_dir" ]]; then
+        noise_mask_dir="$output_dir/manualNoiseMasks"
+    fi
+    
+    # Validate that the directory exists
+    if [[ ! -d "$noise_mask_dir" ]]; then
+        echo "Error: Noise mask directory does not exist: $noise_mask_dir"
+        echo "For 3T data, please ensure the default noise mask directory exists or specify a different path with --noise-mask-dir"
+        exit 1
+    fi
 fi
 
 # Convert comma-separated subjects and sessions to arrays if specified
@@ -354,6 +376,9 @@ echo "  Scanner: $scanner_name"
 echo "  Magnetic field: ${magnetic_field}T"
 echo "  Flip angle: ${flip_angle}°"
 echo "  TR ratio: ${tr_ratio}"
+if [[ -n "$noise_mask_dir" ]]; then
+    echo "  Noise mask directory: $noise_mask_dir"
+fi
 if [[ -n "$work_dir" ]]; then
     echo "  Working directory: $work_dir"
 else
@@ -462,8 +487,12 @@ for anat_path in "${anat_dirs[@]}"; do
         echo "  Submitting denoising job..."
 
         output_dir_denoise="$working_dir/denoise"
-
+        
         denoise_cmd="sbatch -p short,group_servers,gr_weiskopf \"$denoise_script\" \"$container_path\" \"$subject\" \"$session\" \"$magnetic_field\" \"$parent_dir\" \"$output_dir_denoise\""
+        # Add noise mask directory as last argument if specified (only relevant for 3T data)
+        if [[ -n "$noise_mask_dir" ]]; then
+            denoise_cmd="$denoise_cmd \"$noise_mask_dir\""
+        fi
 
         if [[ "$dry_run" == "false" ]]; then
             out=$(eval $denoise_cmd)

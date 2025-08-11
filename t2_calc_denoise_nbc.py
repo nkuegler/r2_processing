@@ -37,19 +37,28 @@ parser.add_argument('--parent-dir', '-p', type=str, required=True,
                     help='Parent directory path (e.g., /data/pt_02262/data/TH_bids/bids)')
 parser.add_argument('--output-dir', '-o', type=str, required=True,
                     help='Output directory path for final results (e.g., /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2)')
+parser.add_argument('--noise-mask-dir', '-noiseMaskdir', type=str, required=False,
+                    help='Directory path containing manually drawn noise mask files (required for 3T data, not used for other field strengths)')
 
 args = parser.parse_args()
 
 # Use parsed arguments
 subj = args.subject
 sess = args.session
-magnetic_field = args.field_strength
+magnetic_field = float(args.field_strength)
+
+# Validate that noise mask directory is provided for 3T data
+if magnetic_field == 3.0 and args.noise_mask_dir is None:
+    parser.error("--noise-mask-dir is required when field strength is 3T")
 
 
 # Define paths based on arguments
 parent_dir = plib.Path(f"{args.parent_dir}/{subj}/{sess}")
 t2_dir = parent_dir.joinpath("anat/")
 afi_dir = parent_dir.joinpath("fmap/")
+
+# Define noise mask directory (only if provided)
+manualNoiseMask_dir = plib.Path(args.noise_mask_dir) if args.noise_mask_dir else None
 
 # Define output directory
 output_dir = plib.Path(f"{args.output_dir}/{subj}/{sess}/anat/")
@@ -185,8 +194,38 @@ helper.copy_corresponding_json(mese_json_source, mese_json_dest)
 ### NOISE BIAS CORRECTION
 
 # extract noise voxels from the data (this should neglect residual grappa recon artifacts)
-noise_mask = extract_noise_mask(input_data=mese_4d, erode_iter=1)
-mese_noise_mean = torch.mean(mese_4d[noise_mask])
+if magnetic_field == 7.0:
+    noise_mask = extract_noise_mask(input_data=mese_4d, erode_iter=1)
+    mese_noise_mean = torch.mean(mese_4d[noise_mask])
+elif magnetic_field == 3.0:
+    # created noise mask for MESE data echo 1 -> load (should not include aliasing artifacts introduced by grappa)
+    fname_man_noise_mask = f"{subj}_{sess}_acq-semc_echo-01_MESE_noiseMaskManual"
+    expected_file_path = manualNoiseMask_dir / f"{fname_man_noise_mask}.nii"
+    
+    # Check if the manual noise mask file exists
+    if not expected_file_path.exists():
+        raise FileNotFoundError(
+            f"Manual noise mask file not found: {expected_file_path}\n\n"
+            f"For 3T data processing, you need to manually draw a noise mask and save it as:\n"
+            f"  {expected_file_path}\n\n"
+            f"Instructions for creating the noise mask:\n"
+            f"1. Open the first echo of the MESE sequence in your favorite image viewer\n"
+            f"2. The mask should contain only noise regions OUTSIDE of the head\n"
+            f"3. Avoid including aliasing artifacts that may be introduced by GRAPPA\n"
+            f"4. Save the mask as a binary NIfTI file (.nii format)\n"
+            f"5. Ensure the mask has the same spatial dimensions as one echo of your MESE data\n\n"
+            f"Please create this file and run the script again."
+        )
+
+    # Load the manually drawn noise mask
+    noise_mask, noise_mask_img, _, _, _ = \
+        helper.load_nifti_as_tensor(input_path=manualNoiseMask_dir, 
+                                    filename=fname_man_noise_mask)
+    # Stack the noise mask along a new dimension to match the number of echoes in MESE data
+    noise_mask = noise_mask.unsqueeze(-1).expand(-1, -1, -1, ne)
+    mese_noise_mean = torch.mean(mese_4d[noise_mask.to(torch.bool)])
+else:
+    raise ValueError(f"Unsupported magnetic field strength: {magnetic_field}. Supported values are 3.0 and 7.0 Tesla.")
 
 
 # we can save this for reference
