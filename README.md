@@ -116,10 +116,16 @@ Final cleanup bridge job depends on all session cleanup bridge jobs. When it run
 
 for now, only the denoising and the b1corr/t2fitting jobs are running in the container. GNLC still depends on the institute's specific environments/containers (e.g., `FSL`) -> may be adjusted at some point
 
+- **some description of the scripts in this directory:**
 The main script runs denoising, GNLC of AFI and MESE images, and B1correction/T2fitting as sequential jobs. After that, the working directory of each session and then the the remains of the working directory is c
 leaned up in separate jobs. The dependency of the SLURM jobs is currently handled by intermediate/bridge jobs that submit the actual processing jobs and handle the job dependencies.
 Actual python processing scripts using PyMRItools (adapted from Jupyter Notebooks) + helper script" -m "One processing script handles the denoising of the MESE data. The other one does the B1+ correction and the T2 fitting via pattern matching. In between, the Gradient nonlinearity correction has to be performed. The python scripts also transfer and/or adapt the NIfTI headers and copy the corresponding json files. // The helper scripts provide functions that are used regularly across the scripts (e.g., for saving, loading, copying jsons, plotting). The plotting functions are not very generalized, and rather put into this separate script to unclutter the processing python scripts than for re-use purposes."
 (see commits from 2025-08-11 for more descriptions of the separate files)
+
+deletion of the working directory is the default behavior (flag --preserve-workdir to skip cleanup and keep the intermediate files)
+
+
+
 
 # ToDos: 
 - GNLC of AFI and MESE need to run sequentially as they would use the same `undistorted/` directory in the input directory (this would cause issues as files would eventually be moved away from this working directory) 
@@ -136,6 +142,20 @@ Actual python processing scripts using PyMRItools (adapted from Jupyter Notebook
 - executing the GNLC inside the container does not work at the moment! -> see todos in README in the `batch_gnlc` repository
 - investigate why nvidia-smi call in t2 slurm script does not work
 
+## Most "urgent" ToDos:
+
+- calculate R2prime
+
+- move all bridge job scripts to separate files
+
+- check that --output parameter is passed to all the slurm scripts instead of defining it in the script
+
+- rename all outfiles to `%j_(bridge)_(denoise|gnlc|t2fit)_subj_sess`
+    - separate them in bridge job directory and actual job directory
+
+
+- implement an overwrite flag (to overwrite the files in the working and output directory)
+- maybe check for .nii files in output directory
 
 
 ```
