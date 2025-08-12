@@ -1,5 +1,62 @@
 #!/usr/bin/env python3
 
+"""
+==============================================================================
+B1+ Correction and T2 Fitting Processing Script
+==============================================================================
+
+DESCRIPTION:
+    This script performs B1+ correction and T2 fitting processing on MESE and AFI
+    data for a single subject/session using PyMRItools. The script processes the
+    input MESE data to produce T2 maps with B1+ field inhomogeneity correction
+    using dictionary-based pattern matching and regularization techniques.
+
+USAGE:
+    python t2_calc_b1corr_t2fit.py [OPTIONS]
+
+REQUIRED ARGUMENTS:
+    --subject, -s           Subject identifier (e.g., sub-004)
+    --session, -ses         Session identifier (e.g., ses-04)
+    --field-strength, -b0   Magnetic field strength in Tesla (3.0 or 7.0)
+    --input-dir, -i         Input directory containing gradient nonlinearity corrected data
+    --output-dir, -o        Output directory for final T2/R2 and B1+ maps
+    --denoise-dir, -denDir  Directory containing denoised data for noise statistics
+
+OPTIONAL ARGUMENTS:
+    --work-dir, -w          Working directory for temporary files (default: output_dir/Supplementary/)
+    --tr-ratio, -trr        TR ratio (TR2/TR1) for AFI B1+ calculation (default: 5.0)
+    --flip-angle, -fa       Flip angle of AFI images in degrees (default: 55.0)
+
+OPERATIONS PERFORMED:
+    1. B1+ field mapping from actual flip angle (AFI) imaging
+    2. B1+ mapping using the echo-modulation curve (EMC) approach from MESE data
+    3. B1+ field regularization (AFI+EMC for 7T, EMC-only for 3T)
+    4. Dictionary-based T2 fitting with B1+ correction using pattern matching
+    5. R2 map calculation from corrected T2 values
+    6. SNR estimation and quality control metrics
+
+EXAMPLE:
+    python t2_calc_b1corr_t2fit.py \\
+        --subject sub-001 --session ses-01 --field-strength 7 \\
+        --input-dir /data/gnlc --output-dir /data/output \\
+        --denoise-dir /data/denoise --tr-ratio 5.0 --flip-angle 55.0
+
+NOTES:
+    - Requires PyMRItools (https://github.com/schmidt-jo/PyMRItools) 
+    - Requires pre-computed dictionary databases specific for your sequence (3T and 7T)
+    - B1+ regularization strategy differs between field strengths:
+      * 7T: Combined AFI and EMC approach with error-based weighting
+      * 3T: EMC-only approach
+    - GPU acceleration automatically used if CUDA is available
+    - Intermediate results saved in working directory for validation
+    - Quality control plots saved as HTML files
+    - Final outputs placed in BIDS-compatible structure
+
+AUTHOR:
+    Niklas Kuegler (kuegler@cbs.mpg.de)
+==============================================================================
+"""
+
 import pathlib as plib
 import logging
 import json

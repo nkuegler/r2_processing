@@ -1,5 +1,66 @@
 #!/usr/bin/env python3
 
+"""
+==============================================================================
+Denoising and Noise Bias Correction Script
+==============================================================================
+
+DESCRIPTION:
+    This script performs denoising and noise bias correction on
+    MESE data for a single subject/session using PyMRItools. The script
+    applies MP-PCA denoising followed by noise bias correction to improve signal
+    quality for subsequent T2 fitting. It handles both 7T (automatic noise masking)
+    and 3T (manual noise masking) data processing workflows.
+
+USAGE:
+    python t2_calc_denoise_nbc.py [OPTIONS]
+
+REQUIRED ARGUMENTS:
+    --subject, -s           Subject identifier (e.g., sub-004)
+    --session, -ses         Session identifier (e.g., ses-04)
+    --field-strength, -b0   Magnetic field strength in Tesla (3.0 or 7.0)
+    --parent-dir, -p        Parent BIDS directory containing raw data
+    --output-dir, -o        Output directory for processed results
+
+OPTIONAL ARGUMENTS:
+    --noise-mask-dir, -noiseMaskdir  Directory containing manual noise mask files 
+                                     (required for 3T data, not used for 7T)
+
+OPERATIONS PERFORMED:
+    1. Loading and concatenation of MESE and AFI acquisitions into 4D volumes
+    2. AFI resampling to MESE acquisition space using ANTs (for visualization only)
+    3. MP-PCA denoising of MESE acquisitions
+    4. Noise mask extraction (automatic for 7T, must be drawn manually for 3T)
+    5. Noise statistics calculation for bias correction parameters
+    6. Noise bias correction
+    7. Visualization for quality control
+
+EXAMPLE:
+    # For 7T data (automatic noise masking):
+    python t2_calc_denoise_nbc.py \\
+        --subject sub-001 --session ses-01 --field-strength 7 \\
+        --parent-dir /bids/input --output-dir /output/denoise
+    
+    # For 3T data (manual noise masking required):
+    python t2_calc_denoise_nbc.py \\
+        --subject sub-001 --session ses-01 --field-strength 3 \\
+        --parent-dir /bids/input --output-dir /output/denoise \\
+        --noise-mask-dir /masks/manual
+
+NOTES:
+    - Automatic noise mask extraction using autodmri for 7T data
+    - Manual noise masks required for 3T data (must NOT contain aliasing artifacts introduced by GRAPPA)
+        - Noise mask format: binary NIfTI file matching MESE echo-01 dimensions
+        - Expected filename format: {subject}_{session}_acq-semc_echo-01_MESE_noiseMaskManual.nii
+    - GPU acceleration automatically used if CUDA is available
+    - Quality control plots saved as HTML files
+    - Noise statistics saved as JSON for downstream processing
+
+AUTHOR:
+    Niklas Kuegler (kuegler@cbs.mpg.de)
+==============================================================================
+"""
+
 import pathlib as plib
 import logging
 import json

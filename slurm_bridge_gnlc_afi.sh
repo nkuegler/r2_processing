@@ -1,5 +1,24 @@
 #!/bin/bash
 
+# ==============================================================================
+# SLURM Bridge Script - AFI Gradient Non-linearity Correction
+# ==============================================================================
+#
+# DESCRIPTION:
+#   Bridge script that executes gradient nonlinearity correction (GNLC) of the AFI data.
+#   Executes the provided GNLC command.
+#   The script is used to manage the dependencies between jobs in the SLURM queue.
+#
+# USAGE:
+#   slurm_bridge_gnlc_afi.sh "<GNLC_COMMAND>"
+#
+# ARGUMENTS:
+#   GNLC_COMMAND - Complete GNLC command string to execute for AFI data
+#
+# AUTHOR:
+#   Niklas Kuegler (kuegler@cbs.mpg.de)
+# ==============================================================================
+
 #SBATCH --time=10
 #SBATCH --mem=1G
 

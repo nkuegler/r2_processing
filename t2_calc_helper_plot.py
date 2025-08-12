@@ -1,5 +1,18 @@
 #!/usr/bin/env python3
 
+"""
+T2 Calculation Helper - Plotting Functions
+------------------------------------------
+
+Visualization utilities for T2 mapping pipeline data using Plotly.
+
+Functions:
+- plot_mese4d_afi4dRe(): Compare 4D MESE and resampled AFI data
+- plot_mese_noise_mask(): Visualize noise mask overlay on MESE data
+- plot_mese_denoised_data(): Compare original vs denoised MESE data
+
+Author: Niklas Kuegler (kuegler@cbs.mpg.de)
+"""
 
 import pathlib as plib
 import logging

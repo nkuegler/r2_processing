@@ -1,4 +1,26 @@
 #!/bin/bash
+
+# ==============================================================================
+# SLURM Bridge Script - Final Cleanup
+# ==============================================================================
+#
+# DESCRIPTION:
+#   Bridge script that coordinates final cleanup after all session cleanups complete.
+#   Reads cleanup job IDs from file and submits final cleanup with proper dependencies.
+#   Handles the final stage of working directory cleanup in the T2 processing pipeline.
+#
+# USAGE:
+#   slurm_bridge_cleanup_final.sh <CLEANUP_SCRIPT> <TEMP_DIR_DENOISE> <TEMP_DIR_GNLC> <TEMP_DIR_T2FIT> <TEMP_DIR_ID> <TEMP_DIR> <DEPENDENCY_ID_FILE>
+#
+# ARGUMENTS:
+#   CLEANUP_SCRIPT     - Path to final cleanup script to execute
+#   TEMP_DIR_*         - Temporary directory paths to be cleaned up
+#   DEPENDENCY_ID_FILE - File containing session cleanup job IDs for dependencies
+#
+# AUTHOR:
+#   Niklas Kuegler (kuegler@cbs.mpg.de)
+# ==============================================================================
+
 #SBATCH --job-name=bridge_cleanup_final
 #SBATCH --time=30
 #SBATCH --mem=1G

@@ -1,39 +1,55 @@
 #!/bin/bash
 
-# T2 B1+ Correction and T2 Fitting SLURM Job Script
-# 
-# This script runs B1+ correction and T2 fitting processing
-# on a SLURM cluster for a single subject/session.
+# ==============================================================================
+# B1+ Correction and T2 Fitting SLURM Job Script
+# ==============================================================================
 #
-# Usage: sbatch slurm_b1corr_t2fit.sh [--gpu=1] <CONTAINER_PATH> <SUBJECT> <SESSION> <MAGNETIC_FIELD> <INPUT_DIR> <WORK_DIR> <OUTPUT_DIR> <TR_RATIO> <FLIP_ANGLE> <DENOISE_DIR>
+# DESCRIPTION:
+#   This script performs B1+ correction and T2 fitting processing on MESE and AFI
+#   data for a single subject/session using PyMRItools within a Singularity container.
+#   The script processes the input MESE data to produce T2 maps with B1+ field inhomogeneity correction.
 #
-# Arguments:
-#   CONTAINER_PATH  - Path to Singularity container
+# USAGE:
+#   sbatch slurm_b1corr_t2fit.sh [--gpu=1] <CONTAINER_PATH> <SUBJECT> <SESSION> <MAGNETIC_FIELD> <INPUT_DIR> <WORK_DIR> <OUTPUT_DIR> <TR_RATIO> <FLIP_ANGLE> <DENOISE_DIR>
+#
+# ARGUMENTS:
+#   CONTAINER_PATH  - Path to Singularity container with PyMRItools, FSL, and ANTS
 #   SUBJECT         - Subject identifier (e.g., sub-004)
 #   SESSION         - Session identifier (e.g., ses-04)
 #   MAGNETIC_FIELD  - Magnetic field strength in Tesla (e.g., 7)
-#   INPUT_DIR       - Path to input directory containing processed data
+#   INPUT_DIR       - Path to input directory containing pre-processed data
 #   WORK_DIR        - Path to working directory for temporary files
-#   OUTPUT_DIR      - Path to output directory for processed results
-#   TR_RATIO        - TR ratio (TR2/TR1) for AFI B1 calculation (e.g., 5.0)
-#   FLIP_ANGLE      - Flip angle of the AFI images in degrees (e.g., 55.0)
-#   DENOISE_DIR     - Directory path containing denoised data
+#   OUTPUT_DIR      - Path to output directory for final results
+#   TR_RATIO        - TR ratio (TR2/TR1) for AFI B1+ calculation (e.g., 5.0)
+#   FLIP_ANGLE      - Flip angle of AFI images in degrees (e.g., 55.0)
+#   DENOISE_DIR     - Path to directory containing denoised data
 #
-# The script processes MESE and AFI data using PyMRItools with the following features:
-#   - B1+ mapping from AFI data
-#   - B1+ mapping EMC
-#   - B1+ correction and regularization
-#   - Dictionary-based T2 fitting
-#   - R2 map calculation
+# OPERATIONS PERFORMED:
+#   1. B1+ field mapping from AFI data
+#   2. B1+ mapping using the echo-modulation curve (EMC) approach
+#   3. B1+ field regularization
+#   4. Dictionary-based T2 fitting with B1+ correction
+#   5. R2 map calculation from corrected T2 values
 #
-# Output is placed in the specified output directory with intermediate results
-# optionally saved in the working directory.
+# EXAMPLE:
+#   sbatch slurm_b1corr_t2fit.sh \
+#     /path/to/pymritools.sif sub-001 ses-01 7 \
+#     /input/gnlc /work/t2fit /output 5.0 55.0 /input/denoise
+#
+# NOTES:
+#   - (optional) Enabling GPU support for processing speeds up processing drastically (--gpus=1 in SLURM)
+#   - Intermediate results saved in working directory
+#   - Final outputs placed in BIDS-compatible structure
+#
+# AUTHOR:
+#   Niklas Kuegler (kuegler@cbs.mpg.de)
+# ==============================================================================
 
 #SBATCH -c 16					# 16 cores
 #SBATCH --mem 32G				# estimated 32G RAM
 #SBATCH --time 90				# estimated 90 minutes maximum
 #SBATCH -o /data/u_kuegler_software/git/r2_map_calculation/logs/t2fit/%j.out	# redirect the output
-#
+
 
 # Extract arguments
 CONTAINER_PATH="$1"

@@ -1,5 +1,19 @@
 #!/usr/bin/env python3
 
+"""
+T2 Calculation Helper - Utility Functions
+-----------------------------------------
+
+General utility functions for T2 mapping pipeline including file I/O and metadata handling.
+
+Functions:
+- save_nifti(): Save data as NIfTI file with optional header customization
+- load_nifti_as_tensor(): Load NIfTI file and return as PyTorch tensor
+- get_timestamp(): Get current timestamp in ISO format
+- copy_corresponding_json(): Copy JSON metadata files between directories
+
+Author: Niklas Kuegler (kuegler@cbs.mpg.de)
+"""
 
 import pathlib as plib
 import logging

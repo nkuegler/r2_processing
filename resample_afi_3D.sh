@@ -1,15 +1,44 @@
 #!/bin/bash
 
-# This script is used to resample a 3D image to the space of a reference image using ANTs.
-# It takes the following arguments:
-# 1. input_fn: The full path to the input image file to be resampled.
-# 2. reference_fn: The full path to the reference image file to which the input image will be resampled.
-# 3. output_fn: The full path to the output image file after resampling.
-# 4. int_mode: The interpolation mode to be used for resampling (e.g., Linear, NearestNeighbor, etc.).
-# Usage: ./resample_afi_3D.sh <input_fn> <reference_fn> <output_fn> <int_mode>
-
-# The implementation uses singularity containers provided by the IT department of the MPI CBS. It will only work in the infrastructure of the institute.
-# This is only preliminary.
+# ==============================================================================
+# 3D Image Resampling Utility Script
+# ==============================================================================
+#
+# DESCRIPTION:
+#   This script resamples any 3D image to match the spatial dimensions and 
+#   orientation of a reference image using ANTs (Advanced Normalization Tools).
+#   The script handles 4D multi-echo reference images by automatically cropping
+#   to the first echo for resampling purposes.
+#
+# USAGE:
+#   ./resample_afi_3D.sh <input_fn> <reference_fn> <output_fn> <int_mode>
+#
+# ARGUMENTS:
+#   input_fn      - Full path to input 3D image file to be resampled
+#   reference_fn  - Full path to reference image file (target space)
+#   output_fn     - Full path to output resampled image file
+#   int_mode      - Interpolation mode (Linear, NearestNeighbor, BSpline, etc.)
+#
+# OPERATIONS PERFORMED:
+#   1. Cropping reference image to first echo (if multi-echo)
+#   2. Spatial resampling using ANTs antsApplyTransforms
+#   3. Cleanup of temporary files
+#
+# EXAMPLE:
+#   ./resample_afi_3D.sh \
+#     /data/afi/sub-001_ses-01_AFI.nii.gz \
+#     /data/mese/sub-001_ses-01_MESE.nii.gz \
+#     /data/output/sub-001_ses-01_AFI_resampled.nii.gz \
+#     Linear
+#
+# NOTES:
+#   - Can be either run within a custom container (native FSL/ANTs installation) 
+#     or on the CBS infrastructure with the pre-built `sc` containers
+#   - Reference images with multiple echoes are automatically cropped to the first echo
+#
+# AUTHOR:
+#   Niklas Kuegler (kuegler@cbs.mpg.de)
+# ==============================================================================
 
 input_fn=$1
 reference_fn=$2
@@ -39,14 +68,13 @@ fi
 output_dir=$(dirname "$output_fn")
 temp_ref="${output_dir}/ref_tmp.nii.gz"
 
-echo "Cropping reference image to only two echoes"
+echo "Cropping reference image to only one echo"
 if [ "$custom_container" = true ]; then
-    fslroi "$reference_fn" "$temp_ref" 0 -1 0 -1 0 -1 0 1    # cut the reference image to only two echoes
+    fslroi "$reference_fn" "$temp_ref" 0 -1 0 -1 0 -1 0 1    # cut the reference image to only one echo
 else
-    $fsl fslroi "$reference_fn" "$temp_ref" 0 -1 0 -1 0 -1 0 1    # cut the reference image to only two echoes
+    $fsl fslroi "$reference_fn" "$temp_ref" 0 -1 0 -1 0 -1 0 1    # cut the reference image to only one echo
 fi
 
-echo "Resampling input image to reference image space"
 echo "Resampling input image to reference image space"
 if [ "$custom_container" = true ]; then
     antsApplyTransforms -d 3 -i "$input_fn" -r "$temp_ref" -o "$output_fn" -n "$int_mode"
