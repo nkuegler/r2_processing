@@ -11,7 +11,7 @@
 #   to the first two echoes to create a proper 4D reference space.
 #
 # USAGE:
-#   ./resample_afi_4D.sh <input_fn> <reference_fn> <output_fn> <int_mode>
+#   ./resample_4D.sh <input_fn> <reference_fn> <output_fn> <int_mode>
 #
 # ARGUMENTS:
 #   input_fn      - Full path to input 4D image file to be resampled
@@ -25,7 +25,7 @@
 #   3. Cleanup of temporary files
 #
 # EXAMPLE:
-#   ./resample_afi_4D.sh \
+#   ./resample_4D.sh \
 #     /data/mese/sub-001_ses-01_MESE.nii.gz \
 #     /data/reference/sub-001_ses-01_reference.nii.gz \
 #     /data/output/sub-001_ses-01_MESE_resampled.nii.gz \

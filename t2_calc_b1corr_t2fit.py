@@ -276,7 +276,7 @@ fname_afib1_resampled = fname_afib1.replace(b1_suffix, f"proc-resampled_{b1_suff
 path_afib1_resampled = working_dir.joinpath(fname_afib1_resampled).with_suffix(".nii")
 interpolation_mode = "Linear" # "Linear" # "NearestNeighbor" # "BSpline" # BSpline seems to cause issues
 cmd = [
-    str(script_dir / "resample_afi_3D.sh"),
+    str(script_dir / "resample_3D.sh"),
     str(path_afib1),
     str(path_mese4d_proc),
     str(path_afib1_resampled),
@@ -297,7 +297,7 @@ fname_afib1err_resampled = fname_afib1_rel_err.replace(b1_suffix, f"proc-resampl
 path_afib1err_resampled = working_dir.joinpath(fname_afib1err_resampled).with_suffix(".nii")
 interpolation_mode = "Linear" # "Linear" # "NearestNeighbor" # "BSpline" # BSpline seems to cause issues
 cmd = [
-    str(script_dir / "resample_afi_3D.sh"),
+    str(script_dir / "resample_3D.sh"),
     str(path_afib1err),
     str(path_mese4d_proc),
     str(path_afib1err_resampled),

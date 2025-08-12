@@ -3,7 +3,7 @@ This script uses the PyMRItools by Jochen Schmidt (schmidt-jo) to calculate R2 m
 
 
 + Run one of the notebooks (`niklas_t2.ipynb` or `niklas_t2_3T.ipynb`)
-    + `resample_afi_3D.sh` and `resample_afi_4D.sh` are used to resample volumes during the notebook execution
+    + `resample_3D.sh` and `resample_4D.sh` are used to resample volumes during the notebook execution
 + when finished, adjust and run `call_r2prime.py` to calculate R2prime from the corresponding maps 
 
 ## 3T data 

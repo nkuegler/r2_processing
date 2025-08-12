@@ -212,7 +212,7 @@ path_afi4d_resampled = output_dir.joinpath(fname_afi_4d_resampled).with_suffix("
 interpolation_mode = "Linear" # "Linear" # "NearestNeighbor" # "BSpline" # BSpline seems to cause issues
 script_dir = plib.Path(__file__).parent
 cmd = [
-    str(script_dir / "resample_afi_4D.sh"),
+    str(script_dir / "resample_4D.sh"),
     str(path_afi4d),
     str(path_mese4d),
     str(path_afi4d_resampled),

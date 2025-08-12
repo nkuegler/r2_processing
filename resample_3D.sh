@@ -11,7 +11,7 @@
 #   to the first echo for resampling purposes.
 #
 # USAGE:
-#   ./resample_afi_3D.sh <input_fn> <reference_fn> <output_fn> <int_mode>
+#   ./resample_3D.sh <input_fn> <reference_fn> <output_fn> <int_mode>
 #
 # ARGUMENTS:
 #   input_fn      - Full path to input 3D image file to be resampled
@@ -25,7 +25,7 @@
 #   3. Cleanup of temporary files
 #
 # EXAMPLE:
-#   ./resample_afi_3D.sh \
+#   ./resample_3D.sh \
 #     /data/afi/sub-001_ses-01_AFI.nii.gz \
 #     /data/mese/sub-001_ses-01_MESE.nii.gz \
 #     /data/output/sub-001_ses-01_AFI_resampled.nii.gz \
