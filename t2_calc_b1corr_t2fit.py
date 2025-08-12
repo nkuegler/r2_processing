@@ -7,8 +7,8 @@ B1+ Correction and T2 Fitting Processing Script
 
 DESCRIPTION:
     This script performs B1+ correction and T2 fitting processing on MESE and AFI
-    data for a single subject/session using PyMRItools. The script processes the
-    input MESE data to produce T2 maps with B1+ field inhomogeneity correction
+    data for a single subject/session using PyMRItools (https://github.com/schmidt-jo/PyMRItools). 
+    The script processes the input MESE data to produce T2 maps with B1+ field inhomogeneity correction
     using dictionary-based pattern matching and regularization techniques.
 
 USAGE:
@@ -42,8 +42,8 @@ EXAMPLE:
         --denoise-dir /data/denoise --tr-ratio 5.0 --flip-angle 55.0
 
 NOTES:
-    - Requires PyMRItools (https://github.com/schmidt-jo/PyMRItools) 
-    - Requires pre-computed dictionary databases specific for your sequence (3T and 7T)
+    - Requires PyMRItools (https://github.com/schmidt-jo/PyMRItools) checked out at the commit 7d29483
+    - Requires pre-computed dictionary databases specific for your sequences
     - B1+ regularization strategy differs between field strengths:
       * 7T: Combined AFI and EMC approach with error-based weighting
       * 3T: EMC-only approach

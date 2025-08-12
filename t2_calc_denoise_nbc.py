@@ -7,8 +7,8 @@ Denoising and Noise Bias Correction Script
 
 DESCRIPTION:
     This script performs denoising and noise bias correction on
-    MESE data for a single subject/session using PyMRItools. The script
-    applies MP-PCA denoising followed by noise bias correction to improve signal
+    MESE data for a single subject/session using PyMRItools (https://github.com/schmidt-jo/PyMRItools). 
+    The script applies MP-PCA denoising followed by noise bias correction to improve signal
     quality for subsequent T2 fitting. It handles both 7T (automatic noise masking)
     and 3T (manual noise masking) data processing workflows.
 
@@ -48,6 +48,7 @@ EXAMPLE:
         --noise-mask-dir /masks/manual
 
 NOTES:
+    - Requires PyMRItools (https://github.com/schmidt-jo/PyMRItools) checked out at the commit 7d29483
     - Automatic noise mask extraction using autodmri for 7T data
     - Manual noise masks required for 3T data (must NOT contain aliasing artifacts introduced by GRAPPA)
         - Noise mask format: binary NIfTI file matching MESE echo-01 dimensions

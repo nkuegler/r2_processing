@@ -1,6 +1,10 @@
 # r2_map_calculation
 This script uses the PyMRItools by Jochen Schmidt (schmidt-jo) to calculate R2 maps from Multi-Echo Spin-Echo data.
 
+## Requirements
+- Requires PyMRItools (https://github.com/schmidt-jo/PyMRItools) checked out at the commit `7d29483`
+- Requires pre-computed dictionary databases specific for your sequences
+
 
 + Run one of the notebooks (`niklas_t2.ipynb` or `niklas_t2_3T.ipynb`)
     + `resample_3D.sh` and `resample_4D.sh` are used to resample volumes during the notebook execution
