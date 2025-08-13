@@ -47,7 +47,7 @@
 #SBATCH -c 4
 #SBATCH --mem 4G
 #SBATCH --time 10
-#SBATCH -o /data/u_kuegler_software/git/r2_map_calculation/logs/coreg_r2/%j.out
+#SBATCH -o /data/u_kuegler_software/git/r2_processing/logs/coreg_r2/%j.out
 
 # Extract arguments
 CONTAINER_PATH="$1"

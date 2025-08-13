@@ -540,7 +540,7 @@ for anat_path in "${anat_dirs[@]}"; do
         
         # Define GNLC commands with predetermined job IDs
         # input and output directories are the working directory
-        gnlc_slurm_log_dir="/data/u_kuegler_software/git/r2_map_calculation/logs/gnlc/"
+        gnlc_slurm_log_dir="/data/u_kuegler_software/git/r2_processing/logs/gnlc/"
 
         # container is currently not used in the GNLC script
         gnlc_cmd_mese="bash $gnlc_script -c $contrast_mese -p $file_pattern_mese -sub $subject -ses $session -job-name $mese_gnlc_job_name -log "$gnlc_slurm_log_dir/gnlc_mese_" $scanner_name $output_dir_denoise $output_dir_gnlc" # -container $container_path
@@ -557,7 +557,7 @@ for anat_path in "${anat_dirs[@]}"; do
             bridge_mese_gnlc_out=$(sbatch -p short,group_servers,gr_weiskopf \
                 --dependency=afterok:${denoise_job_id} \
                 --job-name=bridge_mese_${session_id} \
-                --output=/data/u_kuegler_software/git/r2_map_calculation/logs/denoise/%j_bridge_mese_${session_id}.out \
+                --output=/data/u_kuegler_software/git/r2_processing/logs/denoise/%j_bridge_mese_${session_id}.out \
                 "$gnlc_mese_bridge_script" \
                 "$gnlc_cmd_mese")
 
@@ -573,7 +573,7 @@ for anat_path in "${anat_dirs[@]}"; do
             bridge_afi_out=$(sbatch -p short,group_servers,gr_weiskopf \
                 --dependency=afterok:${denoise_job_id} \
                 --job-name=bridge_afi_${session_id} \
-                --output=/data/u_kuegler_software/git/r2_map_calculation/logs/denoise/%j_bridge_afi_${session_id}.out \
+                --output=/data/u_kuegler_software/git/r2_processing/logs/denoise/%j_bridge_afi_${session_id}.out \
                 "$gnlc_afi_bridge_script" \
                 "$gnlc_cmd_afi")
 
@@ -642,7 +642,7 @@ for anat_path in "${anat_dirs[@]}"; do
 #SBATCH --job-name=bridge_t2fit_${session_id}
 #SBATCH --time=30
 #SBATCH --mem=1G
-#SBATCH --output=/data/u_kuegler_software/git/r2_map_calculation/logs/denoise/%j_bridge_t2fit_${session_id}.out
+#SBATCH --output=/data/u_kuegler_software/git/r2_processing/logs/denoise/%j_bridge_t2fit_${session_id}.out
 
 t2fit_job_name="$1"
 
@@ -758,7 +758,7 @@ EOF
 #SBATCH --job-name=bridge_cleanup_${session_id}
 #SBATCH --time=30
 #SBATCH --mem=1G
-#SBATCH --output=/data/u_kuegler_software/git/r2_map_calculation/logs/denoise/%j_bridge_cleanup_${session_id}.out
+#SBATCH --output=/data/u_kuegler_software/git/r2_processing/logs/denoise/%j_bridge_cleanup_${session_id}.out
 
 t2fit_job_name="$1"
 
@@ -806,7 +806,7 @@ echo "Successfully extracted T2 fitting job ID: \$t2fit_job_id"
 
 # Submit session cleanup job with dependency on actual T2 fitting job ID
 cleanup_dependency="--dependency=afterok:\$t2fit_job_id"
-cleanup_cmd="sbatch -p short,group_servers,gr_weiskopf \${cleanup_dependency} --job-name=cleanup_${session_id} --time=10 --mem=1G --output=/data/u_kuegler_software/git/r2_map_calculation/logs/denoise/%j_cleanup_${subject}_${session}.out \"$session_cleanup_script\" \"$subject\" \"$session\" \"$output_dir_denoise\" \"$output_dir_gnlc\" \"$working_dir_t2fit\""
+cleanup_cmd="sbatch -p short,group_servers,gr_weiskopf \${cleanup_dependency} --job-name=cleanup_${session_id} --time=10 --mem=1G --output=/data/u_kuegler_software/git/r2_processing/logs/denoise/%j_cleanup_${subject}_${session}.out \"$session_cleanup_script\" \"$subject\" \"$session\" \"$output_dir_denoise\" \"$output_dir_gnlc\" \"$working_dir_t2fit\""
 
 echo "Submitting session cleanup job with command:"
 echo "\$cleanup_cmd"

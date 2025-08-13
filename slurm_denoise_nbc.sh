@@ -43,7 +43,7 @@
 #SBATCH -c 16					# 16 cores
 #SBATCH --mem 32G				# estimated 32G RAM
 #SBATCH --time 90				# estimated 90 minutes maximum
-#SBATCH -o /data/u_kuegler_software/git/r2_map_calculation/logs/denoise/%j.out	# redirect the output
+#SBATCH -o /data/u_kuegler_software/git/r2_processing/logs/denoise/%j.out	# redirect the output
 
 
 # Extract arguments
@@ -69,7 +69,7 @@ fi
 echo "--------"
 
 # # Build python command as array
-t2_script="/data/u_kuegler_software/git/r2_map_calculation/t2_calc_denoise_nbc.py"
+t2_script="/data/u_kuegler_software/git/r2_processing/t2_calc_denoise_nbc.py"
 cmd_args=(
     "python3" "${t2_script}"
     "--subject" "${SUBJECT}"

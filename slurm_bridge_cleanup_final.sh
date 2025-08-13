@@ -24,7 +24,7 @@
 #SBATCH --job-name=bridge_cleanup_final
 #SBATCH --time=30
 #SBATCH --mem=1G
-#SBATCH --output=/data/u_kuegler_software/git/r2_map_calculation/logs/%j_bridge_final_cleanup.out
+#SBATCH --output=/data/u_kuegler_software/git/r2_processing/logs/%j_bridge_final_cleanup.out
 
 CLEANUP_SCRIPT="$1"
 TEMP_DIR_DENOISE="$2"
@@ -76,7 +76,7 @@ final_cleanup_cmd="sbatch $final_cleanup_dependency \
     --job-name=cleanup_final \
     --time=10 \
     --mem=1G \
-    --output=/data/u_kuegler_software/git/r2_map_calculation/logs/%j_final_cleanup.out \
+    --output=/data/u_kuegler_software/git/r2_processing/logs/%j_final_cleanup.out \
     -p short,group_servers,gr_weiskopf \
     \"$CLEANUP_SCRIPT\" \
     \"$TEMP_DIR_DENOISE\" \

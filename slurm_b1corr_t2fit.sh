@@ -48,7 +48,7 @@
 #SBATCH -c 16					# 16 cores
 #SBATCH --mem 32G				# estimated 32G RAM
 #SBATCH --time 90				# estimated 90 minutes maximum
-#SBATCH -o /data/u_kuegler_software/git/r2_map_calculation/logs/t2fit/%j.out	# redirect the output
+#SBATCH -o /data/u_kuegler_software/git/r2_processing/logs/t2fit/%j.out	# redirect the output
 
 
 # Extract arguments
@@ -84,7 +84,7 @@ nvidia-smi # --query-gpu=timestamp,utilization.gpu,utilization.memory,temperatur
 
 
 # Build python command as array
-t2_script="/data/u_kuegler_software/git/r2_map_calculation/t2_calc_b1corr_t2fit.py"
+t2_script="/data/u_kuegler_software/git/r2_processing/t2_calc_b1corr_t2fit.py"
 cmd_args=(
     "python3" "${t2_script}"
     "--subject" "${SUBJECT}"

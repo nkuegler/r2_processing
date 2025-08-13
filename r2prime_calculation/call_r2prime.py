@@ -14,7 +14,7 @@ sub_ses_dict['sub-004'] = ['ses-02'] # ['ses-03', 'ses-04']
 
 
 parent_dir = Path('/data/pt_02262/data/TH_bids')
-r2prime_calc_script = Path('/data/u_kuegler_software/git/r2_map_calculation/r2prime_calc.sh')
+r2prime_calc_script = Path('/data/u_kuegler_software/git/r2_processing/r2prime_calc.sh')
 
 for sub, ses_list in sub_ses_dict.items():
     for ses in ses_list:

@@ -4,7 +4,7 @@
 #SBATCH -c 8
 #SBATCH --mem 8G
 #SBATCH --time 30
-#SBATCH -o /data/u_kuegler_software/git/r2_map_calculation/logs/coreg_r2/%j.out
+#SBATCH -o /data/u_kuegler_software/git/r2_processing/logs/coreg_r2/%j.out
 
 moving_img=$1
 reference_img=$2
@@ -34,7 +34,7 @@ fi
 
 ### Run MATLAB/SPM coregistration
 echo "Starting coregistration..."
-MATLAB -v 24.2 matlab -batch "coreg_r2_slab('$moving_img','$reference_img');exit" -sd /data/u_kuegler_software/git/r2_map_calculation/r2prime_calculation
+MATLAB -v 24.2 matlab -batch "coreg_r2_slab('$moving_img','$reference_img');exit" -sd /data/u_kuegler_software/git/r2_processing/r2prime_calculation
 matlab_exit_code=$?
 
 # Check if MATLAB execution was successful
