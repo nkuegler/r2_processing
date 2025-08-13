@@ -74,6 +74,12 @@ echo "--------"
 FSL_VERSION=6.0.6
 custom_container=true
 
+# Validate container exists if using custom container
+if [[ ${custom_container} == true ]] && [ ! -f "${CONTAINER_PATH}" ]; then
+    echo "Error: Container file does not exist: ${CONTAINER_PATH}"
+    exit 1
+fi
+
 # Get list of matching files
 echo_files=($(find "${IMAGE_DIR}" -maxdepth 1 -name "${FNAME_PATTERN}" -type f | sort))
 
@@ -137,6 +143,6 @@ if [ $? -eq 0 ]; then
         echo "Reference image created successfully: ${output_file}"
     fi
 else
-    echo "Error: FSL command failed"
+    echo "Error: FSL echo sum command failed"
     exit 1
 fi

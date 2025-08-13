@@ -85,7 +85,7 @@ elif [ -f "$output_file" ]; then
     fi
 else
     # Move the coregistered result to the specified output location
-    echo "Moving coregistered result from $coregistered_result to $output_dir"
+    echo "Moving coregistered result to $output_dir"
     mv "$coregistered_result" "$output_dir"
     # Check if the move was successful
     if [ $? -eq 0 ]; then
