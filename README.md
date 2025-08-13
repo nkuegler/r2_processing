@@ -1,8 +1,8 @@
-# r2_map_calculation
+# r2_processing
 This script uses the PyMRItools by Jochen Schmidt (schmidt-jo) to calculate R2 maps from Multi-Echo Spin-Echo data.
 
 ## Requirements
-- Requires PyMRItools (https://github.com/schmidt-jo/PyMRItools) checked out at the commit `7d29483`
+- Requires [PyMRItools](https://github.com/schmidt-jo/PyMRItools) checked out at the commit `7d29483`
 - Requires pre-computed dictionary databases specific for your sequences
 
 
@@ -143,8 +143,6 @@ deletion of the working directory is the default behavior (flag --preserve-workd
 - investigate why nvidia-smi call in t2 slurm script does not work
 
 ## Most "urgent" ToDos:
-
-- calculate R2prime
 
 - move all bridge job scripts to separate files
 
