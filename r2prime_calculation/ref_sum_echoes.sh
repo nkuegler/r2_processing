@@ -139,8 +139,32 @@ if [ $? -eq 0 ]; then
         gunzip "${output_file}"
         decompressed_file="${output_file%.gz}"
         echo "Reference image created successfully: ${decompressed_file}"
+        final_output_file="${decompressed_file}"
     else
         echo "Reference image created successfully: ${output_file}"
+        final_output_file="${output_file}"
+    fi
+    
+    # Look for and copy corresponding JSON file
+    first_echo_base="${echo_files[0]%.nii}"
+    json_source="${first_echo_base}.json"
+    
+    if [[ -f "${json_source}" ]]; then
+        # Create JSON filename matching the output image
+        final_output_base="${final_output_file%.nii}"
+        json_destination="${final_output_base}.json"
+        
+        echo "Copying JSON sidecar file to output directory..."
+        cp "${json_source}" "${json_destination}"
+        
+        if [[ $? -eq 0 ]]; then
+            echo "JSON sidecar copied successfully"
+        else
+            echo "Warning: Failed to copy JSON sidecar file"
+        fi
+    else
+        echo "No JSON sidecar file found for: $(basename "${echo_files[0]}")"
+        echo "Expected: $(basename "${json_source}")"
     fi
 else
     echo "Error: FSL echo sum command failed"
