@@ -421,11 +421,13 @@ if [[ "$dry_run" == "false" ]]; then
 fi
 
 cleanup_sess_id_file="$job_id_storage_dir/cleanup_session_ids.txt"
-# Create or reset global cleanup file
-if [[ -f "$cleanup_sess_id_file" ]]; then
-    rm -f "$cleanup_sess_id_file"
+if [[ "$delete_workdir" == "true" ]]; then
+    # Create or reset global cleanup file
+    if [[ -f "$cleanup_sess_id_file" ]]; then
+        rm -f "$cleanup_sess_id_file"
+    fi
+    touch "$cleanup_sess_id_file"
 fi
-touch "$cleanup_sess_id_file"
 
 
 # Counter for job numbering
