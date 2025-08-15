@@ -19,7 +19,7 @@
 #   R2STAR_MAP      - Path to R2* map (must be in same space as R2 map)
 #   WORK_DIR        - Directory where temporary files will be saved
 #   OUTPUT_DIR      - Directory where final results will be saved
-#   OUTPUT_NAME     - (Optional) Name of output R2' file (default: "r2prime.nii.gz")
+#   OUTPUT_NAME     - (Optional) Name of output R2' file. Must be specified with .nii.gz extension (default: "r2prime.nii.gz")
 #
 # OPERATIONS PERFORMED:
 #   1. Validate input files and directories
@@ -82,7 +82,6 @@ echo "--------"
 set -e
 
 # Configuration
-FSL_VERSION=6.0.6
 custom_container=true
 
 # Validate input files exist
@@ -124,8 +123,10 @@ fi
 if [[ ${custom_container} == true ]]; then
     # Native installations in custom container
     fsl_cmd="singularity exec ${CONTAINER_PATH}"
+    FSL_VERSION=$(${fsl_cmd} cat /usr/local/fsl/etc/fslversion)
 else
     # Use prebuilt sc containers in CBS infrastructure
+    FSL_VERSION=6.0.6
     fsl_cmd="sc fsl ${FSL_VERSION}"
 fi
 
@@ -170,6 +171,45 @@ fi
 
 echo ">>> Decompressing output file..."
 gunzip "${OUTPUT_DIR}/${OUTPUT_NAME}"
+
+echo ">>> Creating JSON sidecar file..."
+# Create JSON metadata file for the R2' map
+JSON_FILE="${OUTPUT_DIR}/${OUTPUT_NAME%.nii.gz}.json"
+TIMESTAMP=$(date -Iseconds)
+
+cat > "${JSON_FILE}" << EOF
+{
+  "Description": "R2 prime (R2') map calculated by subtracting R2 from R2* maps",
+  "Sources": {
+    "R2_map": "${R2_MAP}",
+    "R2star_map": "${R2STAR_MAP}"
+  },
+  "ProcessingSteps": [
+    "Calculation: R2' = R2* - R2",
+    "Creation of positive value mask from R2 map",
+    "Application of mask to R2' result",
+    "Thresholding to positive values only",
+  ],
+  "SoftwareInformation": {
+    "Container": $([ "${custom_container}" = true ] && echo "\"${CONTAINER_PATH}\"" || echo '"CBS sc modules"'),
+    "FSL": "${FSL_VERSION}",
+    "ProcessingScript": "r2prime_calc.sh"
+  },
+  "ProcessingTimestamp": "${TIMESTAMP}",
+  "Units": "Hz",
+  "InputValidation": {
+    "sformMatching": "Required and verified",
+    "sform": "${r2_sform}"
+  },
+  "OutputCharacteristics": {
+    "PositiveValuesOnly": true,
+    "MaskedByR2": true,
+    "NaNsRemoved": true
+  }
+}
+EOF
+
+echo "JSON sidecar created: ${JSON_FILE}"
 
 
 echo "---------------------------"

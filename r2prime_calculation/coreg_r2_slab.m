@@ -30,6 +30,8 @@ function coreg_r2_slab(moving, reference)
 
     addpath('/data/u_kuegler_software/git/spm12');
 
+    %%%%%%%% !!! If parameters of the co-registration are changed, update the JSON file creation section in the coreg_r2_slab_slurm.sh accordingly !!! %%%%%%%%
+
     % Create maps
     % spm fmri % show spm progresses
     clear matlabbatch
