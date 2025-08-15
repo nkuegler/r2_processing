@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Script to cycle through a BIDS-like structure and submit SLURM jobs for R2 slab coregistration pipeline
+# Script to cycle through a BIDS-like structure and submit SLURM jobs for R2' creation pipeline
 
 usage() {
 echo \
 "
-$(basename $0): Automatically finds and submits SLURM jobs for R2 slab coregistration pipeline on all anat directories within a BIDS-like structure.
+$(basename $0): Automatically finds and submits SLURM jobs for R2' (R2prime) creation pipeline on all anat directories within a BIDS-like structure.
 
 USAGE:
     $(basename $0) [options] -cont <container_path> -pdw <pdw_dir> -r2 <r2_dir> -r2s <r2s_dir> -o <output_dir>
@@ -15,7 +15,7 @@ MANDATORY OPTIONS:
     -pdw DIR | --pdw-dir DIR: Reference directory containing BIDS-structured PDw echo data
     -r2 DIR | --r2-dir DIR: Input directory containing BIDS-structured R2 slab data
     -r2s DIR | --r2s-dir DIR: Directory containing BIDS-structured R2* map data
-    -o DIR | --output-dir DIR: Output directory for R2' calculation results
+    -o DIR | --output-dir DIR: Output directory for R2' maps
 
 OPTIONAL OPTIONS:
     -h | --help: print help text and exit
@@ -30,12 +30,12 @@ OPTIONAL OPTIONS:
 DESCRIPTION:
     The script searches for directories matching the pattern: r2_dir/sub-*/ses-*/anat/ (for R2 slabs),
     pdw_dir/sub-*/ses-*/anat/ (for PDw echoes), and r2s_dir/sub-*/ses-*/anat/ (for R2* maps) and submits 
-    a series of SLURM jobs for R2 slab coregistration and R2' calculation pipeline in each matching 
+    a series of SLURM jobs for R2 slab coregistration and R2' calculation in each matching 
     directory triplet found.
     
     Processing pipeline:
     1. Reference image creation (sum of PDw echoes)
-    2. R2 slab coregistration to reference image
+    2. R2 slab coregistration to reference image  
     3. R2' calculation (R2* - R2)
     
     If -sub is specified, only processes the specified subjects. If -ses is also specified,
@@ -45,6 +45,9 @@ DESCRIPTION:
     The jobs for each session run sequentially with dependencies.
     
     Creates BIDS structure in output directory: output/sub-xxx/ses-xx/anat/
+
+    All processing steps automatically generate BIDS-compliant JSON sidecar files alongside
+    the imaging data, containing comprehensive processing metadata including input file names, software versions, and technical parameters for reproducibility.
 
 EXAMPLES:
     $(basename $0) -cont /path/to/container.sif -pdw /data/pdw_echoes -r2 /data/r2_slabs -r2s /data/qMRI -o /data/output

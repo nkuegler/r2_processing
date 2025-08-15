@@ -22,11 +22,14 @@ function coreg_r2_slab(moving, reference)
     %   coreg_r2_slab('/path/to/moving.nii', '/path/to/reference.nii');
     %
     % NOTE:
-    %   - Adds SPM to the MATLAB path
-    %   - Input files should be in a format supported by SPM (e.g., NIfTI, ANALYZE)
-    %   - The moving file will be resliced to match the reference file's orientation
+    %   - Adds SPM12 to the MATLAB path
+    %   - Input files should be in a format supported by SPM (e.g., NIfTI)
+    %   - The moving file will be resliced to match the reference file's orientation and resolution
     %   - Uses SPM's 'estwrite' option which estimates transformation and writes resliced image
+    %   - Uses 4th degree B-spline interpolation for high-quality reslicing
+    %   - Uses normalized mutual information as cost function for robust alignment
     %   - Uses custom prefix 'coreg_' for the co-registered image instead of SPM's default 'r' prefix
+    %   - Performs rigid body transformation (6 degrees of freedom: 3 translations + 3 rotations)
 
     addpath('/data/u_kuegler_software/git/spm12');
 

@@ -49,6 +49,9 @@ DESCRIPTION:
     
     Creates BIDS structure in output directory: output/sub-xxx/ses-xx/anat/
 
+    All processing steps automatically generate BIDS-compliant JSON sidecar files alongside
+    the imaging data, containing comprehensive processing metadata including input file names, software versions, and technical parameters for reproducibility.
+
 EXAMPLES:
     $(basename $0) -cont /path/to/container.sif Prisma /data/input /data/output
     $(basename $0) -cont /path/to/container.sif -b 3 -fa 20 -tr 6 Terra /data/input /data/output

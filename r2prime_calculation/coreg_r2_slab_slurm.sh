@@ -1,6 +1,46 @@
 #!/bin/bash
 
+# ==============================================================================
+# R2 Map Coregistration SLURM Job Script
+# ==============================================================================
 #
+# DESCRIPTION:
+#   This script performs rigid body coregistration of R2 maps to PDw reference space
+#   using SPM12 in MATLAB. The coregistration aligns the R2 map to match the spatial
+#   orientation and position of the PDw reference image using normalized mutual
+#   information as the cost function and 4th degree B-spline interpolation for
+#   high-quality reslicing.
+#
+# USAGE:
+#   sbatch coreg_r2_slab_slurm.sh <MOVING_IMAGE> <REFERENCE_IMAGE> <OUTPUT_DIR>
+#
+# ARGUMENTS:
+#   MOVING_IMAGE    - Path to R2 map to be coregistered (moving image)
+#   REFERENCE_IMAGE - Path to PDw image serving as reference target
+#   OUTPUT_DIR      - Directory where coregistered result will be saved
+#
+# OPERATIONS PERFORMED:
+#   1. Execute coregistration using the SPM batch created in coreg_r2_slab.m
+#   2. Move result to output directory
+#   3. Create comprehensive JSON sidecar metadata file
+#
+# EXAMPLE:
+#   sbatch coreg_r2_slab_slurm.sh \
+#     /data/input/r2_map.nii \
+#     /data/input/pdw_reference.nii \
+#     /data/output/coregistered
+#
+# NOTES:
+#   - Uses SPM12 coregistration with rigid body transformation (6 DOF)
+#   - Output file will have 'coreg_' prefix added to original filename
+#   - Overwrites existing files if output already exists in target directory
+#   - Creates comprehensive JSON sidecar with processing metadata
+#   - Visual inspection of coregistration quality is recommended
+#
+# AUTHOR:
+#   Niklas Kuegler (kuegler@cbs.mpg.de)
+# ==============================================================================
+
 #SBATCH -c 8
 #SBATCH --mem 8G
 #SBATCH --time 30
@@ -106,7 +146,7 @@ TIMESTAMP=$(date -Iseconds)
 
 cat > "${JSON_FILE}" << EOF
 {
-  "Description": "Coregistered R2 map aligned to reference R2* space using SPM",
+  "Description": "Coregistered R2 map aligned to reference PDw space using SPM",
   "Sources": {
     "moving_image": "${moving_img}",
     "reference_image": "${reference_img}"
@@ -139,8 +179,8 @@ cat > "${JSON_FILE}" << EOF
   "ProcessingTimestamp": "${TIMESTAMP}",
   "Units": "Hz",
   "CoregistrationDetails": {
-    "ReferenceSpace": "R2* map coordinate system",
-    "QualityCheck": "Visual inspection recommended",
+    "ReferenceSpace": "PDw image coordinate system",
+    "QualityCheck": "Visual inspection recommended"
   }
 }
 EOF

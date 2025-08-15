@@ -27,6 +27,7 @@
 #   3. Calculate R2' = R2* - R2 using FSL tools
 #   4. Create mask from R2 map to exclude NaN and non-positive values
 #   5. Apply mask and threshold R2' to positive values only
+#   6. Create comprehensive JSON sidecar metadata file
 #
 # EXAMPLE:
 #   sbatch r2prime_calc.sh \
@@ -44,6 +45,7 @@
 #   - OUTPUT_DIR must be empty or non-existent
 #   - Handles NaN values in coregistered R2 maps properly
 #   - Final output is automatically decompressed (.nii.gz -> .nii)
+#   - Creates comprehensive JSON sidecar with processing metadata
 #
 # AUTHOR:
 #   Niklas Kuegler (kuegler@cbs.mpg.de)

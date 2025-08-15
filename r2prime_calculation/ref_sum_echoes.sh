@@ -22,10 +22,10 @@
 #
 # OPERATIONS PERFORMED:
 #   1. Search for echo files matching the specified pattern
-#   2. Validate that files were found
-#   3. Create output directory if needed
-#   4. Sum all echo files using FSL fslmaths
-#   5. Decompress output file for compatibility with SPM 
+#   2. Validate that files were found and display file list
+#   3. Sum all echo files using FSL fslmaths with chained -add operations
+#   4. Decompress output file for SPM compatibility (.nii.gz -> .nii)
+#   5. Copy JSON sidecar metadata from first echo file to output
 #
 # EXAMPLE:
 #   sbatch ref_sum_echoes.sh \
@@ -39,6 +39,7 @@
 #   - Supports both custom containers (custom_container=true) and CBS sc modules
 #   - Files are sorted alphabetically before summation for reproducibility
 #   - Output file is automatically decompressed (.nii.gz -> .nii) for SPM compatibility
+#   - Copies JSON sidecar metadata from first echo file to preserve acquisition parameters
 #
 # AUTHOR:
 #   Niklas Kuegler (kuegler@cbs.mpg.de)

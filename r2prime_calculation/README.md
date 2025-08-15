@@ -13,6 +13,8 @@ The script submits three processing steps as sequential SLURM jobs:
     - `R2' = R2* - R2`
     - set non-positive values to 0
 
+(All processing steps automatically generate BIDS-compliant JSON sidecar files alongside the imaging data, containing comprehensive processing metadata including input file names, software versions, and technical parameters for reproducibility.)
+
 
 ## Some additional info
 - all mandatory command line arguments require flags now
