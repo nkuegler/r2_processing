@@ -247,11 +247,7 @@ path_afib1 = helper.save_nifti(output_path=working_dir,
                              affine=afi_gnlc_aff, 
                              header=afi_gnlc_hdr,
                              description=f"B1+ map from {fname_afi_undistorted}, {helper.get_timestamp()}")
-# Copy the JSON file
-json_source = path_afi_gnlc.with_suffix(".json")
-json_dest = working_dir.joinpath(fname_afib1).with_suffix(".json")
-helper.copy_corresponding_json(json_source, json_dest)
-del json_source, json_dest
+### > corresponding JSON file is created at the end of this script
 
 fname_afib1_rel_err = f"{fname_afib1}_rel_err"
 path_afib1err = helper.save_nifti(output_path=working_dir, 
@@ -260,11 +256,6 @@ path_afib1err = helper.save_nifti(output_path=working_dir,
                              affine=afi_gnlc_aff,
                              header=afi_gnlc_hdr,
                              description=f"B1+ relative error map from {fname_afi_undistorted}, {helper.get_timestamp()}")
-# Copy the JSON file
-json_source = path_afi_gnlc.with_suffix(".json")
-json_dest = working_dir.joinpath(fname_afib1_rel_err).with_suffix(".json")
-helper.copy_corresponding_json(json_source, json_dest)
-del json_source, json_dest
 
 # once again we want some resampled version brought into the semc image space, we can use linear interpolation here since the b1 and the rel error maps are assumed to vary smoothly
 
@@ -384,11 +375,8 @@ _ = helper.save_nifti(output_path=working_dir,
                       affine=mese_gnlc_aff,
                       header=mese_gnlc_hdr,
                       description=f"R2 map from {fname_mese_undistorted} derived using the echo-modulation curve approach, {helper.get_timestamp()}")
-# Copy the JSON file
-json_source = path_mese4d_proc.with_suffix(".json")
-json_dest = working_dir.joinpath(fname_r2_emc).with_suffix(".json")
-helper.copy_corresponding_json(json_source, json_dest)
-del json_source, json_dest
+### > corresponding JSON file is created at the end of this script
+
 
 # Now we want to use the AFI B1 estimate and 
 # the calculated afi error maps to calculate 
@@ -400,7 +388,8 @@ if magnetic_field == 7.0:
     # essentially if rel afi error is 0 we trust the afi, 
     # if relative error of afi is 10% we trust the emc
     print("B1 regularization based on AFI relative error")
-    regularization_factor = 1 - torch.clip(b1_afi_re_rel_err, 0, 10) / 10
+    regularization_threshold = 10.0  # in percent
+    regularization_factor = 1 - torch.clip(b1_afi_re_rel_err, 0, regularization_threshold) / regularization_threshold
     b1_reg = regularization_factor * b1_afi_re + (1 - regularization_factor) * b1_emc
     b1_reg = torch.from_numpy(gaussian_filter(b1_reg.numpy(), sigma=2))
     fname_b1_reg = f"{subj}_{sess}_proc-AFIregEMC_{b1_suffix}"
@@ -424,11 +413,8 @@ _ = helper.save_nifti(output_path=working_dir,
                       affine=b1_afi_re_aff, 
                       header=b1_afi_re_hdr,
                       description=description_text_b1reg)
-# Copy the JSON file
-json_source = path_afi_gnlc.with_suffix(".json")
-json_dest = working_dir.joinpath(fname_b1_reg).with_suffix(".json")
-helper.copy_corresponding_json(json_source, json_dest)
-del json_source, json_dest
+### > corresponding JSON file is created at the end of this script
+
 
 # We now redo the fitting with inputting the b1 regularization. 
 # This way the algorithm is not simultaneously optimizing 
@@ -460,15 +446,44 @@ if noise_stats_file.exists():
 else:
     raise FileNotFoundError(f"Noise statistics file not found: {noise_stats_file}")
 
-fit_data_reg_snr = torch.max(mese_denoise_nbc_gnlc, dim=-1).values / mese_noise_mean
+mese_data_reg_snr = torch.max(mese_denoise_nbc_gnlc, dim=-1).values / mese_noise_mean
 # make a threshold map for voxel below 5
 snr_threshold = 5.0
-fit_data_reg_snr_th = (fit_data_reg_snr < snr_threshold).to(torch.int32)
+mese_data_reg_snr_th = (mese_data_reg_snr < snr_threshold).to(torch.int32)
 
 
 # we can save this for reference
 print("-------------------------------")
 print("Saving results")
+
+# Prepare processing information for JSON metadata
+processing_info = {
+    "subject": subj,
+    "session": sess,
+    "field_strength": magnetic_field,
+    "tr_ratio": trRatio,
+    "flip_angle": fa,
+    "input_files": {
+        "mese": fname_mese_undistorted,
+        "afi": fname_afi_undistorted
+    },
+    "processing_steps": [
+        "B1+ field mapping from AFI data",
+        "Echo-modulation curve (EMC) B1+ estimation from MESE data",
+        f"B1+ regularization ({'AFI+EMC (linear weighting between AFI B1+ and EMC B1+, up to {regularization_threshold} % error in the AFI B1+ map)' if magnetic_field == 7.0 else 'EMC-only (no AFI B1 map used)'})",
+        "Dictionary-based T2 fitting with B1+ correction",
+        "R2 map calculation from T2 values"
+    ],
+    "software_version": {
+        "PyMRItools": "commit 7d29483",
+        "processing_script": "t2_calc_b1corr_t2fit.py"
+    },
+    "database_path": str(path_db),
+    "gpu_used": torch.cuda.is_available(),
+    "B1_smoothing_kernel": 3,
+    "B1_regularization_threshold": regularization_threshold if magnetic_field == 7.0 else "N/A",
+    "timestamp": helper.get_timestamp()
+}
 
 fname_r2 = f"{subj}_{sess}_{r2_suffix}"
 _ = helper.save_nifti(output_path=target_output_dir,
@@ -477,11 +492,9 @@ _ = helper.save_nifti(output_path=target_output_dir,
                       affine=mese_gnlc_aff,
                       header=mese_gnlc_hdr,
                       description=f"R2 map from {fname_mese_undistorted}, AFI/EMC B1+ correction, {helper.get_timestamp()}")
-# Copy the JSON file
-json_source = path_mese4d_proc.with_suffix(".json")
+# Create processing JSON metadata
 json_dest = target_output_dir.joinpath(fname_r2).with_suffix(".json")
-helper.copy_corresponding_json(json_source, json_dest)
-del json_source, json_dest
+helper.create_processing_json(json_dest, "R2map", processing_info)
 
 
 fname_t2 = f"{subj}_{sess}_{t2_suffix}"
@@ -491,11 +504,9 @@ _ = helper.save_nifti(output_path=target_output_dir,
                       affine=mese_gnlc_aff,
                       header=mese_gnlc_hdr,
                       description=f"T2 map from {fname_mese_undistorted}, AFI/EMC B1+ correction, {helper.get_timestamp()}")
-# Copy the JSON file
-json_source = path_mese4d_proc.with_suffix(".json")
+# Create processing JSON metadata
 json_dest = target_output_dir.joinpath(fname_t2).with_suffix(".json")
-helper.copy_corresponding_json(json_source, json_dest)
-del json_source, json_dest
+helper.create_processing_json(json_dest, "T2map", processing_info)
 
 
 fname_b1_reg_fit = f"{subj}_{sess}_{b1_suffix}"
@@ -505,17 +516,15 @@ _ = helper.save_nifti(output_path=target_output_dir,
                       affine=b1_afi_re_aff,
                       header=b1_afi_re_hdr,
                       description=description_text_b1reg)
-# Copy the JSON file
-json_source = path_afi_gnlc.with_suffix(".json")
+# Create processing JSON metadata
 json_dest = target_output_dir.joinpath(fname_b1_reg_fit).with_suffix(".json")
-helper.copy_corresponding_json(json_source, json_dest)
-del json_source, json_dest
+helper.create_processing_json(json_dest, "TB1map", processing_info)
 
 
-fname_snr_map = "fit_data_reg_snr"
+fname_snr_map = "mese_data_reg_snr"
 _ = helper.save_nifti(output_path=working_dir,
                       filename=fname_snr_map,
-                      data=fit_data_reg_snr,
+                      data=mese_data_reg_snr,
                       affine=mese_gnlc_aff,
                       header=mese_gnlc_hdr,
                       description=f"Estimated SNR map of {fname_mese_undistorted}, {helper.get_timestamp()}")
@@ -526,10 +535,10 @@ helper.copy_corresponding_json(json_source, json_dest)
 del json_source, json_dest
 
 
-fname_snr_thr_map = "fit_data_reg_snr_thr"
+fname_snr_thr_map = "mese_data_reg_snr_thr"
 _ = helper.save_nifti(output_path=working_dir,
                       filename=fname_snr_thr_map,
-                      data=fit_data_reg_snr_th,
+                      data=mese_data_reg_snr_th,
                       affine=mese_gnlc_aff,
                       header=mese_gnlc_hdr,
                       description=f"Thresholded SNR map of {fname_mese_undistorted}, threshold={snr_threshold}, {helper.get_timestamp()}")
@@ -538,3 +547,42 @@ json_source = path_mese4d_proc.with_suffix(".json")
 json_dest = working_dir.joinpath(fname_snr_thr_map).with_suffix(".json")
 helper.copy_corresponding_json(json_source, json_dest)
 del json_source, json_dest
+
+
+### Create JSON metadata for intermediate processing results
+
+# AFI B1+ map JSON
+afi_b1_processing_info = processing_info.copy()
+afi_b1_processing_info["processing_steps"] = [
+    "B1+ field mapping from AFI data using actual flip angle technique",
+    "Unit conversion from percentage to ratio",
+    "Spatial smoothing during B1+ calculation"
+]
+afi_b1_processing_info["input_files"] = {
+    "afi": fname_afi_undistorted
+}
+afi_b1_processing_info["B1_regularization_threshold"] = "n/a (AFI-only)"
+json_dest = working_dir.joinpath(fname_afib1).with_suffix(".json")
+helper.create_processing_json(json_dest, "TB1map", afi_b1_processing_info)
+
+# EMC R2 map JSON
+emc_processing_info = processing_info.copy()
+emc_processing_info["processing_steps"] = [
+    "Echo-modulation curve (EMC) B1+ estimation from MESE data",
+    "Dictionary-based T2 fitting using EMC B1+ only (no AFI regularization)",
+    "R2 map calculation from EMC-derived T2 values"
+]
+emc_processing_info["B1_regularization_threshold"] = "n/a (EMC-only)"
+json_dest = working_dir.joinpath(fname_r2_emc).with_suffix(".json")
+helper.create_processing_json(json_dest, "R2map", emc_processing_info)
+
+# Regularized B1+ map JSON  
+b1_reg_processing_info = processing_info.copy()
+b1_reg_processing_info["processing_steps"] = [
+    "B1+ field mapping from AFI data",
+    "Echo-modulation curve (EMC) B1+ estimation from MESE data",
+    f"B1+ regularization ({'AFI+EMC (linear weighting between AFI B1+ and EMC B1+, up to {regularization_threshold} % error in the AFI B1+ map)' if magnetic_field == 7.0 else 'EMC-only (no AFI B1 map used)'})",
+    "Spatial smoothing of regularized B1+ map"
+]
+json_dest = working_dir.joinpath(fname_b1_reg).with_suffix(".json")
+helper.create_processing_json(json_dest, "TB1map", b1_reg_processing_info)

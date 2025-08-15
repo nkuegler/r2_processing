@@ -119,11 +119,12 @@ for now, only the denoising and the b1corr/t2fitting jobs are running in the con
 - **some description of the scripts in this directory:**
 The main script runs denoising, GNLC of AFI and MESE images, and B1correction/T2fitting as sequential jobs. After that, the working directory of each session and then the the remains of the working directory is c
 leaned up in separate jobs. The dependency of the SLURM jobs is currently handled by intermediate/bridge jobs that submit the actual processing jobs and handle the job dependencies.
-Actual python processing scripts using PyMRItools (adapted from Jupyter Notebooks) + helper script" -m "One processing script handles the denoising of the MESE data. The other one does the B1+ correction and the T2 fitting via pattern matching. In between, the Gradient nonlinearity correction has to be performed. The python scripts also transfer and/or adapt the NIfTI headers and copy the corresponding json files. // The helper scripts provide functions that are used regularly across the scripts (e.g., for saving, loading, copying jsons, plotting). The plotting functions are not very generalized, and rather put into this separate script to unclutter the processing python scripts than for re-use purposes."
+Actual python processing scripts using PyMRItools (adapted from Jupyter Notebooks) + helper script" -m "One processing script handles the denoising of the MESE data. The other one does the B1+ correction and the T2 fitting via pattern matching. In between, the Gradient nonlinearity correction has to be performed. The python scripts also transfer and/or adapt the NIfTI headers and creating the corresponding json files. // The helper scripts provide functions that are used regularly across the scripts (e.g., for saving, loading, creating jsons, plotting). The plotting functions are not very generalized, and rather put into this separate script to unclutter the processing python scripts than for re-use purposes."
 (see commits from 2025-08-11 for more descriptions of the separate files)
 
 deletion of the working directory is the default behavior (flag --preserve-workdir to skip cleanup and keep the intermediate files)
 
+- sidecar json files are created after the processing, describing which processing steps and parameters were used to create the respective file
 
 
 
@@ -172,9 +173,8 @@ echo "Previously saved T2 fit job: $T2FIT_JOB_ID"
 
 ```
 # 7T
-./t2_processing_main.sh -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif --d -b 7 -sub sub-004 -ses ses-04 Terra /data/pt_02262/data/TH_bids/bids/ /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2_autom/
+./t2_processing_main.sh -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif -b 7 -sub sub-004 -ses ses-04 Terra /data/pt_02262/data/TH_bids/bids/ /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/
 
 # 3T
-./t2_processing_main.sh -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif --d -b 3 -fa 60.0 -tr 3.0 -sub sub-001 -ses ses-05 Terra /data/pt_02262/data/TH_bids/bids/ /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2_autom/
-# --nmd /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2_autom/manualNoiseMasks
+./t2_processing_main.sh -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif -b 3 -fa 60.0 -tr 3.0 -sub sub-001 -ses ses-05 -nmd /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/manualNoiseMasks Terra /data/pt_02262/data/TH_bids/bids/ /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/
 ```
