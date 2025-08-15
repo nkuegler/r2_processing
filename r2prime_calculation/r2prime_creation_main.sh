@@ -25,6 +25,7 @@ OPTIONAL OPTIONS:
                                         Note: -ses requires -sub to be specified
     -w DIR | --work-dir DIR: working directory for intermediate files (default: output_dir/Supplementary)
     -fp PATTERN | --fname-pattern PATTERN: filename pattern for echo files (default: \"*acq-PDw*echo-*part-mag*.nii\")
+    -pw | --preserve-workdir: preserve working directories after processing (default: working directories are deleted)
     --dry-run: show commands that would be executed without actually submitting jobs
 
 DESCRIPTION:
@@ -37,10 +38,15 @@ DESCRIPTION:
     1. Reference image creation (sum of PDw echoes)
     2. R2 slab coregistration to reference image  
     3. R2' calculation (R2* - R2)
+    4. Session cleanup (removes intermediate files for each session)
+    5. Final cleanup (removes remaining temporary directory structure)
     
-    If -sub is specified, only processes the specified subjects. If -ses is also specified,
-    only processes the specified sessions for those subjects. Without these flags, processes
-    all subjects and sessions found.
+    By default, intermediate files and working directories are automatically cleaned up
+    after successful processing. Use --preserve-workdir to keep all intermediate files.
+
+    If -sub is specified, the script processes only the specified subjects. If -ses is also specified,
+    it only processes the specified sessions for those subjects. Without these flags, it processes
+    all subjects and sessions that are present in all three input directories.
 
     The jobs for each session run sequentially with dependencies.
     
@@ -54,6 +60,7 @@ EXAMPLES:
     $(basename $0) -sub \"sub-001,sub-002\" -cont /path/to/container.sif -pdw /data/pdw_echoes -r2 /data/r2_slabs -r2s /data/qMRI -o /data/output
     $(basename $0) -sub \"sub-001\" -ses \"ses-01,ses-02\" -cont /path/to/container.sif -pdw /data/pdw_echoes -r2 /data/r2_slabs -r2s /data/qMRI -o /data/output
     $(basename $0) -w /scratch/temp --fname-pattern \"*PDw*echo*.nii\" -cont /path/to/container.sif -pdw /data/pdw_echoes -r2 /data/r2_slabs -r2s /data/qMRI -o /data/output
+    $(basename $0) -pw -cont /path/to/container.sif -pdw /data/pdw_echoes -r2 /data/r2_slabs -r2s /data/qMRI -o /data/output
     $(basename $0) --dry-run -t 5 -cont /path/to/container.sif -pdw /data/pdw_echoes -r2 /data/r2_slabs -r2s /data/qMRI -o /data/output
 
 AUTHOR:
@@ -64,6 +71,7 @@ AUTHOR:
 # Default parameters
 delay=1
 dry_run=false
+delete_workdir=true
 container_path=""
 pdw_dir=""
 r2_dir=""
@@ -74,6 +82,7 @@ subjects=""
 sessions=""
 fname_pattern="*acq-PDw*echo-*part-mag*.nii"
 fname_ref_echoSum="PDw_echoes_sum.nii" 
+logs_dir="/data/u_kuegler_software/git/r2_processing/logs/r2prime_calc"
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -121,6 +130,10 @@ while [[ $# -gt 0 ]]; do
         -fp|--fname-pattern)
             fname_pattern="$2"
             shift 2
+            ;;
+        -pw|--preserve-workdir)
+            delete_workdir=false
+            shift
             ;;
         --dry-run)
             dry_run=true
@@ -344,6 +357,7 @@ if [[ -n "$work_dir" ]]; then
 else
     echo "  Working directory: $output_dir/Supplementary"
 fi
+echo "Working directory cleanup: $(if [[ "$delete_workdir" == "true" ]]; then echo "ENABLED (default)"; else echo "DISABLED"; fi)"
 if [[ ${#subject_array[@]} -gt 0 ]]; then
     echo "Subjects filter: ${subject_array[*]}"
     if [[ ${#session_array[@]} -gt 0 ]]; then
@@ -373,6 +387,11 @@ if [[ "$dry_run" == "false" ]]; then
     mkdir -p "$working_dir"
 fi
 
+# Create logs directory
+if [[ "$dry_run" == "false" ]]; then
+    mkdir -p "$logs_dir"
+fi
+
 # Counter for job numbering
 job_counter=1
 total_sessions=${#anat_dirs[@]}
@@ -382,6 +401,9 @@ skipped_sessions=0
 declare -A ref_sum_job_ids
 declare -A coreg_job_ids
 declare -A r2prime_job_ids
+
+# Array to store session cleanup job IDs if cleanup is enabled
+session_cleanup_job_ids=()
 
 r2_suffix="R2map"
 r2s_suffix="R2starmap"
@@ -427,7 +449,7 @@ for anat_path in "${anat_dirs[@]}"; do
         # ================================================================
         echo "  Submitting reference image creation job..."
 
-        ref_sum_cmd="sbatch -p short,group_servers,gr_weiskopf \"$ref_sum_script\" \"$container_path\" \"$pdw_anat_path\" \"$target_working_dir\" \"$fname_pattern\" \"${fname_ref_echoSum}.gz\""
+        ref_sum_cmd="sbatch -p short,group_servers,gr_weiskopf --output=\"$logs_dir/%j_createRef_${subject}_${session}.out\" \"$ref_sum_script\" \"$container_path\" \"$pdw_anat_path\" \"$target_working_dir\" \"$fname_pattern\" \"${fname_ref_echoSum}.gz\""
 
         if [[ "$dry_run" == "false" ]]; then
             # echo "    Command: $ref_sum_cmd"
@@ -461,7 +483,7 @@ for anat_path in "${anat_dirs[@]}"; do
         coreg_ref_img="$target_working_dir/$fname_ref_echoSum"
 
         # does not run in custom container for now
-        coreg_cmd="sbatch -p short,group_servers,gr_weiskopf --dependency=afterok:$ref_sum_job_id \"$coreg_script\" \"$coreg_moving_img\" \"$coreg_ref_img\" \"$target_working_dir\""
+        coreg_cmd="sbatch -p short,group_servers,gr_weiskopf --dependency=afterok:$ref_sum_job_id --output=\"$logs_dir/%j_coregR2_${subject}_${session}.out\" \"$coreg_script\" \"$coreg_moving_img\" \"$coreg_ref_img\" \"$target_working_dir\""
         
         if [[ "$dry_run" == "false" ]]; then
 
@@ -507,7 +529,7 @@ for anat_path in "${anat_dirs[@]}"; do
         r2star_map="$r2s_dir/$subject/$session/anat/${subject}_${session}_${r2s_suffix}.nii"
         fname_r2prime="${subject}_${session}_${r2p_suffix}.nii.gz" # only filename, no path
 
-        r2prime_cmd="sbatch -p short,group_servers,gr_weiskopf --dependency=afterok:$coreg_job_id \"$r2prime_script\" \"$container_path\" \"$r2_map\" \"$r2star_map\" \"$target_working_dir\" \"$target_output_dir\" \"$fname_r2prime\""
+        r2prime_cmd="sbatch -p short,group_servers,gr_weiskopf --dependency=afterok:$coreg_job_id --output=\"$logs_dir/%j_calcR2prime_${subject}_${session}.out\" \"$r2prime_script\" \"$container_path\" \"$r2_map\" \"$r2star_map\" \"$target_working_dir\" \"$target_output_dir\" \"$fname_r2prime\""
 
         if [[ "$dry_run" == "false" ]]; then
             # Check if R2* map file exists
@@ -540,6 +562,65 @@ for anat_path in "${anat_dirs[@]}"; do
             r2prime_job_ids[$session_id]="DRY_RUN_R2PRIME_JOB_ID"
         fi
 
+        # ================================================================
+        # JOB 4: SESSION CLEANUP (if delete_workdir is enabled)
+        # ================================================================
+        if [[ "$delete_workdir" == "true" ]]; then
+            echo "  Submitting session cleanup job..."
+            
+            # Get dependency on R2' calculation job
+            r2prime_job_id="${r2prime_job_ids[$session_id]}"
+            
+            # Create inline session cleanup script
+            session_cleanup_script="/tmp/r2p_session_cleanup_${session_id}_$$.sh"
+            
+            cat > "$session_cleanup_script" << 'EOF'
+#!/bin/bash
+#SBATCH --time=10
+#SBATCH --mem=1G
+
+# Session cleanup: remove intermediate files for specific session
+session_working_dir="$1"
+
+echo "Starting session cleanup for directory: $session_working_dir"
+
+if [[ -d "$session_working_dir" ]]; then
+    echo "Removing session working directory"
+    rm -rf "$session_working_dir"
+
+    if [[ $? -eq 0 ]]; then
+        echo "Session cleanup completed successfully"
+    else
+        echo "Error: Failed to remove session working directory"
+        exit 1
+    fi
+else
+    echo "Warning: Session working directory not found: $session_working_dir"
+fi
+
+echo "Session cleanup finished"
+EOF
+            
+            if [[ "$dry_run" == "false" ]]; then
+                cleanup_cmd="sbatch -p short,group_servers,gr_weiskopf --dependency=afterok:$r2prime_job_id --output=\"$logs_dir/%j_cleanup_${subject}_${session}.out\" \"$session_cleanup_script\" \"$target_working_dir\""
+
+                cleanup_out=$(eval $cleanup_cmd)
+                
+                if [[ $cleanup_out =~ Submitted\ batch\ job\ ([0-9]+) ]]; then
+                    cleanup_job_id="${BASH_REMATCH[1]}"
+                    echo "    Session cleanup job ID: $cleanup_job_id (depends on job: $r2prime_job_id)"
+                    session_cleanup_job_ids+=("$cleanup_job_id")
+                else
+                    echo "    Warning: Could not extract session cleanup job ID"
+                fi
+            else
+                echo "    DRY RUN: Would submit session cleanup job for: $target_working_dir"
+                session_cleanup_job_ids+=("DRY_RUN_SESSION_CLEANUP_${session_id}")
+            fi
+            # Remove temporary script file
+            rm -f "$session_cleanup_script"
+        fi
+
         
         # Add delay between session processing (except for the last session)
         if [[ $job_counter -lt $total_sessions ]]; then
@@ -560,9 +641,80 @@ for anat_path in "${anat_dirs[@]}"; do
     fi
 done
 
+# ================================================================
+# FINAL CLEANUP JOB (if delete_workdir is enabled and session cleanup jobs exist)
+# ================================================================
+if [[ "$delete_workdir" == "true" && \
+      ${#session_cleanup_job_ids[@]} -gt 0 && \
+      $((total_sessions - skipped_sessions)) -gt 0 ]]; then
+    
+    echo
+    echo "--------------------------------------"
+    echo "Creating final cleanup job for remaining parts of the working directory..."
+    
+    if [[ "$dry_run" == "false" ]]; then
+        # Join all session cleanup job IDs with colons for dependency
+        cleanup_deps=$(IFS=:; echo "${session_cleanup_job_ids[*]}")
+        final_cleanup_dependency="--dependency=afterok:$cleanup_deps"
+        
+        # Create inline final cleanup script
+        final_cleanup_script="/tmp/r2p_final_cleanup_$$.sh"
+        
+        cat > "$final_cleanup_script" << 'EOF'
+#!/bin/bash
+#SBATCH --time=10
+#SBATCH --mem=1G
+
+# Final cleanup: remove entire working directory
+working_dir="$1"
+
+echo "Starting final cleanup for working directory: $working_dir"
+
+if [[ -d "$working_dir" ]]; then
+    echo "Removing entire working directory"
+    rm -rf "$working_dir"
+    
+    if [[ $? -eq 0 ]]; then
+        echo "Final cleanup completed successfully"
+    else
+        echo "Error: Failed to remove working directory"
+        exit 1
+    fi
+else
+    echo "Warning: Working directory not found: $working_dir"
+fi
+
+echo "Final cleanup finished"
+EOF
+
+        final_cleanup_cmd="sbatch -p short,group_servers,gr_weiskopf $final_cleanup_dependency --output=\"$logs_dir/%j_final_cleanup.out\" \"$final_cleanup_script\" \"$working_dir\""
+
+        echo "Submitting final cleanup job with dependency on ${#session_cleanup_job_ids[@]} session cleanup jobs..."
+        final_cleanup_out=$(eval $final_cleanup_cmd)
+        
+        if [[ $final_cleanup_out =~ Submitted\ batch\ job\ ([0-9]+) ]]; then
+            final_cleanup_job_id="${BASH_REMATCH[1]}"
+            echo "Final cleanup job ID: $final_cleanup_job_id (depends on session cleanup job(s): ${session_cleanup_job_ids[*]})"
+            echo "   Will remove entire working directory: $working_dir after all sessions are processed."
+        else
+            echo "Warning: Could not extract final cleanup job ID"
+        fi
+        # Remove temporary script file
+        rm -f "$final_cleanup_script"
+    else
+        echo "DRY RUN: Would submit final cleanup job that:"
+        echo "  - Depends on ${#session_cleanup_job_ids[@]} session cleanup jobs"
+        echo "  - Removes entire working directory: $working_dir"
+    fi
+elif [[ "$delete_workdir" == "true" ]]; then
+    echo
+    if [[ ${#session_cleanup_job_ids[@]} -eq 0 || $((total_sessions - skipped_sessions)) -eq 0 ]]; then
+        echo "> No final cleanup needed - no sessions were processed successfully"
+    fi
+fi
+
 echo
 echo "=========================================="
-echo "R2 slab coregistration and R2' calculation pipeline submission completed!"
 echo "Total sessions found: $total_sessions"
 echo "Sessions skipped: $skipped_sessions"
 echo "Sessions processed: $((total_sessions - skipped_sessions))"
@@ -570,6 +722,12 @@ echo "Processing pipeline per session:"
 echo "  1. Reference image creation (PDw echo summation)"
 echo "  2. R2 slab coregistration to reference image"
 echo "  3. R2' calculation (R2* - R2)"
+if [[ "$delete_workdir" == "true" ]]; then
+    echo "  4. Session cleanup → 5. Final cleanup (after all sessions)"
+    echo "Working directory cleanup: ENABLED (default)"
+else
+    echo "Working directory cleanup: DISABLED (--preserve-workdir specified)"
+fi
 if [[ "$dry_run" == "false" ]]; then
     echo "Check job status with: squeue -u \$USER"
     echo "Monitor logs in the respective SLURM script log directories"

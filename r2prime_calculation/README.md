@@ -50,5 +50,4 @@ The script submits three processing steps as sequential SLURM jobs:
 
 
 # Todos:
-- include R2prime calculation as third step
-- cleanup option (when processing implementation is finished completely)
+- adjust session cleanup and final cleanup scripts to be used by both the R2prime calculatin and the t2 processing
