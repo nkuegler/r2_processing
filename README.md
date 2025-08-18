@@ -96,6 +96,7 @@ The container automatically activates the conda environment on execution.
 
 - need to adjust `path_db` in `t2_calc_b1corr_t2fit.py`
 - for the 3T data, autodmri does not work well. Therefore you have to manually draw noise masks.
+    - The results of the 3T denoising may be slightly wrong as the manually drawn noise maps could include small parts of the GRAPPA-introduced aliasing artifacts. The noise in these masks may not be independent and identically distributed (i.i.d.) Gaussian noise with zero mean. As the MP-PCA denoising compares the empirical eigenvalue spectrum of the data with the theoretical Marchenko-Pastur distribution, which is derived under the model of Gaussian noise, the provided data may contradict the key assumption of the denoising method.
 
 
 The GNLC call script must find the files matching the pattern. Therefore, this is run after the denoising job is finished. An intermediate bridge job (one for MESE and one for AFI) is started that depends on the successful completion of the denoising job, and submits the two corresponding GNLC scripts with pre-defined job IDs. The last step (T2 fitting) depends on the pre-defined job IDs which are assigned to the GNLC jobs.
@@ -142,6 +143,7 @@ deletion of the working directory is the default behavior (flag --preserve-workd
 - **other option to submit jobs: submit an wrapper script that submits the job and then waits for this job to finish (e.g., extract the ID and wait until this ID turns from running state to completed) -> using this approach, the next wrapper job can just depend on this wrapper job**
 - executing the GNLC inside the container does not work at the moment! -> see todos in README in the `batch_gnlc` repository
 - investigate why nvidia-smi call in t2 slurm script does not work
+- problem that 3T and 7T DICOM-imported MESE data is usually located in the same directory. Therefore, we need to specify the subject/sessions manually, which may be a little tedious. This could be fixed by reading the magnetic field strength from the sidecar JSON.
 
 ## Most "urgent" ToDos:
 
@@ -171,10 +173,43 @@ echo "Previously saved T2 fit job: $T2FIT_JOB_ID"
 
 # Current command:
 
+## Testing
 ```
 # 7T
 ./t2_processing_main.sh -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif -b 7 -sub sub-004 -ses ses-04 Terra /data/pt_02262/data/TH_bids/bids/ /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/
 
 # 3T
-./t2_processing_main.sh -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif -b 3 -fa 60.0 -tr 3.0 -sub sub-001 -ses ses-05 -nmd /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/manualNoiseMasks Terra /data/pt_02262/data/TH_bids/bids/ /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/
+./t2_processing_main.sh -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif -b 3 -fa 60.0 -tr 3.0 -sub sub-001 -ses ses-05 -nmd /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/manualNoiseMasks Prisma_fit /data/pt_02262/data/TH_bids/bids/ /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/
+```
+
+
+## Actual data processing
+```
+# 7T
+./t2_processing_main.sh -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif -b 7 -sub sub-001,sub-002 -ses ses-04 -pw Terra /data/pt_02262/data/TH_bids/bids/ /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/
+
+./t2_processing_main.sh -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif -b 7 -sub sub-003 -ses ses-03,ses-05,ses-06 -pw Terra /data/pt_02262/data/TH_bids/bids/ /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/
+
+./t2_processing_main.sh -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif -b 7 -sub sub-004 -ses ses-02,ses-03,ses-04 -pw Terra /data/pt_02262/data/TH_bids/bids/ /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/
+
+./t2_processing_main.sh -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif -b 7 -sub sub-005 -ses ses-03,ses-04,ses-05 -pw Terra /data/pt_02262/data/TH_bids/bids/ /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/
+
+rm -rf /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/Supplementary
+
+./r2prime_creation_main.sh -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif -pdw /data/pt_02262/data/TH_bids/bids/derivatives/LORAKS/derivatives/LCPCA_distCorr/ -r2 /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/ -r2s /data/pt_02262/data/TH_bids/bids/derivatives/LORAKS/derivatives/qMRI_noB1corr/ -o /data/pt_02262/data/TH_bids/bids/derivatives/r2prime/b7T/
+
+
+# 3T
+./t2_processing_main.sh -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif -b 3 -fa 60.0 -tr 3.0 -sub sub-001 -ses ses-05,ses-06,ses-07,ses-08,ses-09,ses-10 -pw -nmd /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/manualNoiseMasks Prisma_fit /data/pt_02262/data/TH_bids/bids/ /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/
+
+./t2_processing_main.sh -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif -b 3 -fa 60.0 -tr 3.0 -sub sub-002 -ses ses-06,ses-07 -pw -nmd /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/manualNoiseMasks Prisma_fit /data/pt_02262/data/TH_bids/bids/ /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/
+
+./t2_processing_main.sh -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif -b 3 -fa 60.0 -tr 3.0 -sub sub-003 -ses ses-04,ses-07 -pw -nmd /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/manualNoiseMasks Prisma_fit /data/pt_02262/data/TH_bids/bids/ /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/
+
+./t2_processing_main.sh -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif -b 3 -fa 60.0 -tr 3.0 -sub sub-005 -ses ses-06,ses-07,ses-08,ses-09 -pw -nmd /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/manualNoiseMasks Prisma_fit /data/pt_02262/data/TH_bids/bids/ /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/
+
+rm -rf /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/Supplementary
+
+./r2prime_creation_main.sh -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif -pdw /data/pt_02262/data/TH_bids/bids/derivatives/LCPCA_distCorr/ -r2 /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/ -r2s /data/pt_02262/data/TH_bids/bids/derivatives/qMRI_noB1corr/ -o /data/pt_02262/data/TH_bids/bids/derivatives/r2prime/b3T/ 
+# -pw
 ```
