@@ -1,37 +1,47 @@
 #!/bin/bash
 
 # ==============================================================================
-# Session cleanup script for T2 processing pipeline
+# Session cleanup script for neuroimaging processing pipelines
 # ==============================================================================
 #
 # DESCRIPTION:
 #   This script removes temporary working directories for a specific subject and
-#   session after T2 processing pipeline completion. It's designed to be called
+#   session after processing pipeline completion. It's designed to be called
 #   as part of the automated cleanup process to free up disk space by removing
 #   intermediate files that are no longer needed.
 #
+#   This script is flexible and can be used by different processing pipelines
+#   (T2 processing, R2' creation, etc.) by passing different sets of directories.
+#
 # USAGE:
-#   slurm_cleanup_session.sh <SUBJECT> <SESSION> <TEMP_DIR_DENOISE> <TEMP_DIR_GNLC> <TEMP_DIR_T2FIT>
+#   slurm_cleanup_session.sh <SUBJECT> <SESSION> <TEMP_DIR_1> [TEMP_DIR_2] [TEMP_DIR_3] [...]
 #
 # ARGUMENTS:
 #   SUBJECT           - Subject identifier (e.g., sub-001)
 #   SESSION           - Session identifier (e.g., ses-01)
-#   TEMP_DIR_DENOISE  - Root path to denoising working directory
-#   TEMP_DIR_GNLC     - Root path to gradient non-linearity correction working directory
-#   TEMP_DIR_T2FIT    - Root path to T2 fitting working directory
+#   TEMP_DIR_1        - First temporary directory root path
+#   TEMP_DIR_2        - Second temporary directory root path (optional)
+#   TEMP_DIR_3        - Third temporary directory root path (optional)
+#   [...]             - Additional temporary directory root paths (optional)
 #
 # DIRECTORIES REMOVED:
-#   - ${TEMP_DIR_DENOISE}/${SUBJECT}/${SESSION}/
-#   - ${TEMP_DIR_GNLC}/${SUBJECT}/${SESSION}/
-#   - ${TEMP_DIR_T2FIT}/${SUBJECT}/${SESSION}/
+#   For each provided TEMP_DIR: ${TEMP_DIR}/${SUBJECT}/${SESSION}/
 #
-# EXAMPLE:
+# EXAMPLES:
+#   # T2 processing pipeline (3 directories)
 #   slurm_cleanup_session.sh \
 #     sub-001 ses-01 \
 #     /scratch/denoise /scratch/gnlc /scratch/t2fit
+#   
+#   # R2' creation pipeline (1 directory)
+#   slurm_cleanup_session.sh \
+#     sub-001 ses-01 \
+#     /scratch/r2prime_work
 #
 # NOTES:
-#   - This script is typically called automatically by the T2 processing pipeline
+#   - This script is typically called automatically by processing pipelines
+#   - Supports variable number of directory arguments for flexibility
+#   - Compatible with T2 processing pipeline, R2' creation pipeline, and others
 #
 # WARNING:
 #   This script permanently deletes all intermediate processing files of the specified session.
@@ -42,33 +52,42 @@
 #
 # ==============================================================================
 
-# Arguments: subject session temp_dir_denoise temp_dir_gnlc temp_dir_t2fit
-
 SUBJECT="$1"
 SESSION="$2"
-TEMP_DIR_DENOISE="$3"
-TEMP_DIR_GNLC="$4"
-TEMP_DIR_T2FIT="$5"
+
+# Shift to remove subject and session from argument list
+shift 2
+
+# Remaining arguments are the directories to clean up
+TEMP_DIRS=("$@")
 
 echo "$(date '+%Y-%m-%d %H:%M:%S')"
 echo ""
 
-echo "Session cleanup: Deleting working directories for ${SUBJECT}/${SESSION}"
+echo "Session cleanup: Deleting temporary directories for ${SUBJECT}/${SESSION}"
+
+# Check if we have any directories to process
+if [[ ${#TEMP_DIRS[@]} -eq 0 ]]; then
+    echo "Warning: No directories specified for cleanup"
+    exit 0
+fi
+
+echo "Processing ${#TEMP_DIRS[@]} temporary directory root(s):"
 
 # Remove directories if they exist
-if [[ -d "$TEMP_DIR_DENOISE/$SUBJECT/$SESSION" ]]; then
-    rm -rf "$TEMP_DIR_DENOISE/$SUBJECT/$SESSION"
-    echo "Deleted: $TEMP_DIR_DENOISE/$SUBJECT/$SESSION"
-fi
-
-if [[ -d "$TEMP_DIR_GNLC/$SUBJECT/$SESSION" ]]; then
-    rm -rf "$TEMP_DIR_GNLC/$SUBJECT/$SESSION"
-    echo "Deleted: $TEMP_DIR_GNLC/$SUBJECT/$SESSION"
-fi
-
-if [[ -d "$TEMP_DIR_T2FIT/$SUBJECT/$SESSION" ]]; then
-    rm -rf "$TEMP_DIR_T2FIT/$SUBJECT/$SESSION"
-    echo "Deleted: $TEMP_DIR_T2FIT/$SUBJECT/$SESSION"
-fi
+for temp_dir in "${TEMP_DIRS[@]}"; do
+    target_path="$temp_dir/$SUBJECT/$SESSION"
+    if [[ -d "$target_path" ]]; then
+        rm -rf "$target_path"
+        if [[ $? -eq 0 ]]; then
+            echo "Deleted: $target_path"
+        else
+            echo "Error: Failed to remove session's temporary directory"
+            exit 1
+        fi
+    else
+        echo "Not found (skipping): $target_path"
+    fi
+done
 
 echo "Session cleanup completed successfully for ${SUBJECT}/${SESSION}"

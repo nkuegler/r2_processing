@@ -252,6 +252,8 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ref_sum_script="$script_dir/ref_sum_echoes.sh"
 coreg_script="$script_dir/coreg_r2_slab_slurm.sh"
 r2prime_script="$script_dir/r2prime_calc.sh"
+session_cleanup_script="$script_dir/../slurm_cleanup_session.sh"
+final_cleanup_script="$script_dir/../slurm_cleanup_final.sh"
 
 # Verify required scripts exist
 if [[ ! -f "$ref_sum_script" ]]; then
@@ -266,6 +268,16 @@ fi
 
 if [[ ! -f "$r2prime_script" ]]; then
     echo "Error: R2' calculation SLURM script not found at $r2prime_script"
+    exit 1
+fi
+
+if [[ ! -f "$session_cleanup_script" ]]; then
+    echo "Error: Session cleanup SLURM script not found at $session_cleanup_script"
+    exit 1
+fi
+
+if [[ ! -f "$final_cleanup_script" ]]; then
+    echo "Error: Final cleanup SLURM script not found at $final_cleanup_script"
     exit 1
 fi
 
@@ -571,38 +583,8 @@ for anat_path in "${anat_dirs[@]}"; do
             # Get dependency on R2' calculation job
             r2prime_job_id="${r2prime_job_ids[$session_id]}"
             
-            # Create inline session cleanup script
-            session_cleanup_script="/tmp/r2p_session_cleanup_${session_id}_$$.sh"
-            
-            cat > "$session_cleanup_script" << 'EOF'
-#!/bin/bash
-#SBATCH --time=10
-#SBATCH --mem=1G
-
-# Session cleanup: remove intermediate files for specific session
-session_working_dir="$1"
-
-echo "Starting session cleanup for directory: $session_working_dir"
-
-if [[ -d "$session_working_dir" ]]; then
-    echo "Removing session working directory"
-    rm -rf "$session_working_dir"
-
-    if [[ $? -eq 0 ]]; then
-        echo "Session cleanup completed successfully"
-    else
-        echo "Error: Failed to remove session working directory"
-        exit 1
-    fi
-else
-    echo "Warning: Session working directory not found: $session_working_dir"
-fi
-
-echo "Session cleanup finished"
-EOF
-            
             if [[ "$dry_run" == "false" ]]; then
-                cleanup_cmd="sbatch -p short,group_servers,gr_weiskopf --dependency=afterok:$r2prime_job_id --output=\"$logs_dir/%j_cleanup_${subject}_${session}.out\" \"$session_cleanup_script\" \"$target_working_dir\""
+                cleanup_cmd="sbatch -p short,group_servers,gr_weiskopf --dependency=afterok:$r2prime_job_id --time=10 --mem=1G --output=\"$logs_dir/%j_cleanup_${subject}_${session}.out\" \"$session_cleanup_script\" \"$subject\" \"$session\" \"$working_dir\""
 
                 cleanup_out=$(eval $cleanup_cmd)
                 
@@ -614,11 +596,9 @@ EOF
                     echo "    Warning: Could not extract session cleanup job ID"
                 fi
             else
-                echo "    DRY RUN: Would submit session cleanup job for: $target_working_dir"
+                echo "    DRY RUN: Would submit session cleanup job for: $subject/$session in $working_dir"
                 session_cleanup_job_ids+=("DRY_RUN_SESSION_CLEANUP_${session_id}")
             fi
-            # Remove temporary script file
-            rm -f "$session_cleanup_script"
         fi
 
         
@@ -656,38 +636,8 @@ if [[ "$delete_workdir" == "true" && \
         # Join all session cleanup job IDs with colons for dependency
         cleanup_deps=$(IFS=:; echo "${session_cleanup_job_ids[*]}")
         final_cleanup_dependency="--dependency=afterok:$cleanup_deps"
-        
-        # Create inline final cleanup script
-        final_cleanup_script="/tmp/r2p_final_cleanup_$$.sh"
-        
-        cat > "$final_cleanup_script" << 'EOF'
-#!/bin/bash
-#SBATCH --time=10
-#SBATCH --mem=1G
 
-# Final cleanup: remove entire working directory
-working_dir="$1"
-
-echo "Starting final cleanup for working directory: $working_dir"
-
-if [[ -d "$working_dir" ]]; then
-    echo "Removing entire working directory"
-    rm -rf "$working_dir"
-    
-    if [[ $? -eq 0 ]]; then
-        echo "Final cleanup completed successfully"
-    else
-        echo "Error: Failed to remove working directory"
-        exit 1
-    fi
-else
-    echo "Warning: Working directory not found: $working_dir"
-fi
-
-echo "Final cleanup finished"
-EOF
-
-        final_cleanup_cmd="sbatch -p short,group_servers,gr_weiskopf $final_cleanup_dependency --output=\"$logs_dir/%j_final_cleanup.out\" \"$final_cleanup_script\" \"$working_dir\""
+        final_cleanup_cmd="sbatch -p short,group_servers,gr_weiskopf $final_cleanup_dependency --output=\"$logs_dir/%j_final_cleanup.out\" --time=10 --mem=1G \"$final_cleanup_script\" \"$working_dir\""
 
         echo "Submitting final cleanup job with dependency on ${#session_cleanup_job_ids[@]} session cleanup jobs..."
         final_cleanup_out=$(eval $final_cleanup_cmd)
@@ -699,8 +649,6 @@ EOF
         else
             echo "Warning: Could not extract final cleanup job ID"
         fi
-        # Remove temporary script file
-        rm -f "$final_cleanup_script"
     else
         echo "DRY RUN: Would submit final cleanup job that:"
         echo "  - Depends on ${#session_cleanup_job_ids[@]} session cleanup jobs"

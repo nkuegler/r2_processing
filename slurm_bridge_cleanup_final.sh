@@ -14,7 +14,7 @@
 #
 # ARGUMENTS:
 #   CLEANUP_SCRIPT     - Path to final cleanup script to execute
-#   TEMP_DIR_*         - Temporary directory paths to be cleaned up
+#   TEMP_DIR_*         - Temporary directory paths to be cleaned up (passed to cleanup script as: TEMP_DIR first, then subdirectories)
 #   DEPENDENCY_ID_FILE - File containing session cleanup job IDs for dependencies
 #
 # AUTHOR:
@@ -79,11 +79,11 @@ final_cleanup_cmd="sbatch $final_cleanup_dependency \
     --output=/data/u_kuegler_software/git/r2_processing/logs/%j_final_cleanup.out \
     -p short,group_servers,gr_weiskopf \
     \"$CLEANUP_SCRIPT\" \
+    \"$TEMP_DIR\" \
     \"$TEMP_DIR_DENOISE\" \
     \"$TEMP_DIR_GNLC\" \
     \"$TEMP_DIR_T2FIT\" \
-    \"$TEMP_DIR_ID\" \
-    \"$TEMP_DIR\""
+    \"$TEMP_DIR_ID\""
 
 echo "Submitting final cleanup job with command:"
 echo "$final_cleanup_cmd"
