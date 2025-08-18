@@ -28,23 +28,26 @@ The script submits three processing steps as sequential SLURM jobs:
 - for 7T data:
 ```
 # single subject
-./r2prime_creation_main.sh -sub sub-004 -ses ses-03 -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif -pdw /data/pt_02262/data/TH_bids/bids/derivatives/LORAKS/derivatives/LCPCA_distCorr/ -r2 /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/ -r2s /data/pt_02262/data/TH_bids/bids/derivatives/LORAKS/derivatives/qMRI_noB1corr/ -o /data/pt_02262/data/TH_bids/bids/derivatives/r2prime/b7T/
-
 # all subjects/sessions
 ./r2prime_creation_main.sh -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif -pdw /data/pt_02262/data/TH_bids/bids/derivatives/LORAKS/derivatives/LCPCA_distCorr/ -r2 /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/ -r2s /data/pt_02262/data/TH_bids/bids/derivatives/LORAKS/derivatives/qMRI_noB1corr/ -o /data/pt_02262/data/TH_bids/bids/derivatives/r2prime/b7T/
+
+# single subject: -sub sub-004 -ses ses-03 
 ```
 
 - for 3T data:
 ```
-./r2prime_creation_main.sh -sub sub-001 -ses ses-05 -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif -pdw /data/pt_02262/data/TH_bids/bids/derivatives/LCPCA_distCorr/ -r2 /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/ -r2s /data/pt_02262/data/TH_bids/bids/derivatives/qMRI_noB1corr/ -o /data/pt_02262/data/TH_bids/bids/derivatives/r2prime/b3T/
-```
+./r2prime_creation_main.sh -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif -pdw /data/pt_02262/data/TH_bids/bids/derivatives/LCPCA_distCorr/ -r2 /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/ -r2s /data/pt_02262/data/TH_bids/bids/derivatives/qMRI_noB1corr/ -o /data/pt_02262/data/TH_bids/bids/derivatives/r2prime/b3T/ 
+# -pw
 
+# single subject: -sub sub-001 -ses ses-05 
+```
 
 ## Analysis of the co-registered brains
 - 7T looks good (sub-004 ses-03)
     - maybe a few pixels offset in some regions (however, the contrasts are also not fully comparable)
 - 3T worse (sub-001 ses-05)
     - R2 map looks a little bloated compared to the reference (still quite ok)
+    - **I accidentally used the Terra coefficients for GNLC. This seems to explain the poor co-registration results. Now it works!!!**
 - check co-registration of each file separately
 
 
