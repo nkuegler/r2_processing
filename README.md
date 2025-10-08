@@ -196,7 +196,7 @@ echo "Previously saved T2 fit job: $T2FIT_JOB_ID"
 
 rm -rf /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/Supplementary
 
-./r2prime_creation_main.sh -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif -pdw /data/pt_02262/data/TH_bids/bids/derivatives/LORAKS/derivatives/LCPCA_distCorr/ -r2 /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/ -r2s /data/pt_02262/data/TH_bids/bids/derivatives/LORAKS/derivatives/qMRI_noB1corr/ -o /data/pt_02262/data/TH_bids/bids/derivatives/r2prime/b7T/
+./r2prime_creation_main.sh -pw -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif -pdw /data/pt_02262/data/TH_bids/bids/derivatives/LORAKS/derivatives/LCPCA_distCorr/ -r2 /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/ -r2s /data/pt_02262/data/TH_bids/bids/derivatives/LORAKS/derivatives/qMRI_noB1corr/ -o /data/pt_02262/data/TH_bids/bids/derivatives/r2prime/b7T/
 
 
 # 3T
@@ -210,6 +210,5 @@ rm -rf /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/Supplementary
 
 rm -rf /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/Supplementary
 
-./r2prime_creation_main.sh -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif -pdw /data/pt_02262/data/TH_bids/bids/derivatives/LCPCA_distCorr/ -r2 /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/ -r2s /data/pt_02262/data/TH_bids/bids/derivatives/qMRI_noB1corr/ -o /data/pt_02262/data/TH_bids/bids/derivatives/r2prime/b3T/ 
-# -pw
+./r2prime_creation_main.sh -pw -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif -pdw /data/pt_02262/data/TH_bids/bids/derivatives/LCPCA_distCorr/ -r2 /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/ -r2s /data/pt_02262/data/TH_bids/bids/derivatives/qMRI_noB1corr/ -o /data/pt_02262/data/TH_bids/bids/derivatives/r2prime/b3T/
 ```

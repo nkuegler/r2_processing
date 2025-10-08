@@ -54,3 +54,4 @@ The script submits three processing steps as sequential SLURM jobs:
 
 # Todos:
 - adjust session cleanup and final cleanup scripts to be used by both the R2prime calculatin and the t2 processing
+- R2prime calc fails in the last step if output dir is not empty. This should be checked in the before submitting the job or the data in the output dir should be overwritten
