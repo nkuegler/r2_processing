@@ -1,29 +1,7 @@
 ## Processing steps
 
 
-The script submits three processing steps as sequential SLURM jobs: 
-1. Creation of a reference image by summing all available PDw echoes (as all qMRI maps are present in the PDw space)
-    - sum all denoised and gradient nonlinearity corrected PDw echoes together using `fslmaths`
-    - save the result as `PDw_echoes_sum.nii` in the specified working directory
-2. Co-registration of the R2 (slab) to the reference image
-    - use SPM's coregistration (Estimate and Reslice)
-    - constructed as SPM batch 
-3. Calculation of the R2prime map
-    - validation that R2* and R2 are present in the same space (`sform`)
-    - `R2' = R2* - R2`
-    - set non-positive values to 0
-
-(All processing steps automatically generate BIDS-compliant JSON sidecar files alongside the imaging data, containing comprehensive processing metadata including input file names, software versions, and technical parameters for reproducibility.)
-
-
-## Some additional info
-- all mandatory command line arguments require flags now
-- It is required to specify the parent directory of the PDw, the R2*, and the R2 data as input. All of them have to be organized in BIDS format (`/sub-*/ses-*/anat`).
-- The output directory will automatically be organized in BIDS structure.
-- Each subject/session directory must be present in the PDw dir, R2 dir, and R2* dir for the script to process it. 
-
-
-## current command:
+<!-- ## current command:
 
 - for 7T data:
 ```
@@ -40,18 +18,7 @@ The script submits three processing steps as sequential SLURM jobs:
 # -pw
 
 # single subject: -sub sub-001 -ses ses-05 
-```
-
-## Analysis of the co-registered brains
-- 7T looks good (sub-004 ses-03)
-    - maybe a few pixels offset in some regions (however, the contrasts are also not fully comparable)
-- 3T worse (sub-001 ses-05)
-    - R2 map looks a little bloated compared to the reference (still quite ok)
-    - **I accidentally used the Terra coefficients for GNLC. This seems to explain the poor co-registration results. Now it works!!!**
-- check co-registration of each file separately
+``` -->
 
 
 
-# Todos:
-- adjust session cleanup and final cleanup scripts to be used by both the R2prime calculatin and the t2 processing
-- R2prime calc fails in the last step if output dir is not empty. This should be checked in the before submitting the job or the data in the output dir should be overwritten
