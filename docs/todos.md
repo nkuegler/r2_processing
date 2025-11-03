@@ -4,7 +4,9 @@
 
 ### Current Limitations & Planned Improvements
 
-1. **Bridge Job Refactoring**
+1. Add LORAKS reconstruction of rawdata, combined with improved denoising technique (see directory `denoising_new/`).
+
+2. **Bridge Job Refactoring**
    - Move all bridge job scripts to separate files (currently T2 bridge and session cleanup bridge is inline)
    - Bridge job flow currently overly complicated -> works but could be adjusted for convenience at some point in one of the following ways:
       - lookup function to extract job ID as shared utility (use custom job names -> function in separate script that extracts job ID from custom job name)
@@ -23,22 +25,22 @@
          echo "Previously saved T2 fit job: $T2FIT_JOB_ID"
          ```
 
-2. **GNLC Execution**
+3. **GNLC Execution**
    - Currently runs outside the container (uses institute-specific FSL/ANTs)
    - Should be integrated into container for portability 
    - See TODOs in `batch_gnlc` repository (rather adjust there and not in this repository)
 
-3. **Logfile output location**
+4. **Logfile output location**
    - check that `--output` parameter in each SLURM call is pre-defined and passed instead of manually specifying it
    - Better organization of log file in clear directories (separate bridge/actual jobs)
       - rename all outfiles to `%j_(bridge)_(denoise|gnlc|t2fit)_subj_sess`
       - separate them in bridge job directory and actual job directory
       
-4. **Overwrite flag**
+5. **Overwrite flag**
    - Implement overwrite flag for existing files in working and output directories
    - Check for existing output files before processing (e.g., check for `.nii`)
 
-5. **Parallel GNLC Processing**
+6. **Parallel GNLC Processing**
    - MESE and AFI GNLC use same `undistorted/` directory (need to run sequentially as files are eventually moved away from the working directory) 
    - currently: 60-second delay prevents conflicts (fragile solution)
    - the parallel processing works for now, because the GNLC of the AFI maps is so much faster than of the MESE data. However, problems can arise when they have similar processing times as they write to the same `undistorted` dir in the `output_dir_denoise`
@@ -50,14 +52,14 @@
          - or just add some unique string to the end of the file names of the two important files and remove it when re-loading them
       - Add counter for job names in GNLC script (-> submit jobs with increasing counter in job name)
 
-6. **Field Strength Detection**
+7. **Field Strength Detection**
    - Auto-detect field strength from sidecar JSON
    - 3T and 7T data is usually located in the same directory -> Currently necessary to manually specify subjects/sessions for these mixed-field datasets.
 
-7. **GPU Monitoring**
+8. **GPU Monitoring**
    - `nvidia-smi` call in T2 SLURM script currently not functional
 
-8. **Path to database must be manually specified**
+9. **Path to database must be manually specified**
    - path to the database for pattern matching specified in `t2_calc_b1corr_t2fit.py`
    - not convenient -> may need to be adjusted by defining it in a separate settings file or similar (flag for specifying the path does not seem the best solution)
 
