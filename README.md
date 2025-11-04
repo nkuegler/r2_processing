@@ -124,6 +124,8 @@ For 3T data, create manual noise masks:
 
 <h3 id="use-t2-processing-pipeline">T2 Processing Pipeline</h>
 
+[full documentation](docs/doc_t2_processing.md)
+
 #### Basic Syntax
 
 ```bash
@@ -188,6 +190,8 @@ For 3T data, create manual noise masks:
 ---
 
 <h3 id="use-r2p-calculation-pipeline">R2' Calculation Pipeline</h>
+
+[full documentation](docs/doc_r2prime_calculation.md)
 
 #### Basic Syntax
 
