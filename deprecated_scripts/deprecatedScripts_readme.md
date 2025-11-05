@@ -22,3 +22,47 @@ This script uses the PyMRItools by Jochen Schmidt (schmidt-jo) to calculate R2 m
         2. better: 
             - draw a mask in echo-01 of the MESE data which contains only noise voxels (outside of the brain and no aliasing artifacts visible)
             - save it to the output directory (`../derivatives/relax_R2/sub-xxx/ses-xx`) with the file name `mese_noise_mask_manual.nii`
+
+
+
+## Processing workflow in the Jupyter notebooks
+
+- Denoising of the MESE data
+    - using the first part of the Jupyter notebook
+- Gradient Nonlinearity correction
+    - correcting the magnitude maps of the denoised MESE data 
+    - make sure that resampled AFI is also corrected for the nonlinearities
+- B1+ calculation
+    - using part of the Jupyter notebook
+    - make sure to use the denoised and corrected MESE data and the corrected AFI images
+- T2 fitting
+    - using the last part of the Jupyter Notebook
+- followed by R2prime calculation
+    - including co-registration of R2 to R2*
+    - preliminary scripts do not exist anymore -> use the R2' calculation pipeline
+
+
+### Denoising
+- Just run the Jupyter Notebook until the bias corrected denoised image is saved
+
+### Gradient Nonlinearity correction
+- MESE and AFI 4D qformcode and sformcode must be adjusted
+    - **(not necessary in the full pipeline. I cannot remember, why that was an issue before?)**
+    ```bash
+    fslorient -setsformcode 1 file.nii
+    fslorient -setqformcode 1 file.nii
+    ```
+
+```bash
+mv afi_4d.nii afi_4d_TB1AFI.nii
+
+getserver -sb
+./call_slurm_batch_magn.sh -c mese -p _nbc -sub sub-004 -ses ses-04 Terra /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/ /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2_gnlc/mese/
+./call_slurm_batch_magn.sh -c afi -p _TB1AFI -sub sub-004 -ses ses-04 Terra /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/ /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2_gnlc/afi/
+```
+
+- MESE and AFI data must be named with correct suffix
+    - MESE noise bias corrected GNLC
+    - AFI original GNLC → will be resampled again later
+
+
