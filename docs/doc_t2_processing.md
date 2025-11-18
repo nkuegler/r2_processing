@@ -299,6 +299,8 @@ The main entry point is `t2_processing_main.sh`, which automatically discovers a
 ./t2_processing_main.sh [options] <scanner_name> <parent_directory> <output_directory>
 ```
 
+> Currently, there are still some hard-coded paths left in the code. You can find information about that in the [Open ToDo's](docs/todos.md).
+
 ### Command-line Options
 
 #### Required Arguments

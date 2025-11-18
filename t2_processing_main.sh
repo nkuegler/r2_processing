@@ -20,8 +20,8 @@ OPTIONS:
                                         Note: -ses requires -sub to be specified
     -cont CONTAINER_PATH | --container CONTAINER_PATH: path to Singularity container (required)
     -b FIELD | --magnetic-field FIELD: magnetic field strength in Tesla (default: 7)
-    -fa ANGLE | --flip-angle ANGLE: flip angle in degrees (default: 55.0)
-    -tr RATIO | --tr-ratio RATIO: TR ratio value (default: 5.0)
+    -fa ANGLE | --flip-angle ANGLE: flip angle of the AFI acquisition in degrees (default: 55.0)
+    -tr RATIO | --tr-ratio RATIO: TR ratio between the two AFI acquisitions (default: 5.0)
     -w DIR | --work-dir DIR: working directory for intermediate files (default: output_directory/Supplementary). Three subdirectories will be created inside the working directory: denoise, gnlc, t2fit.
     -nmd | --noise-mask-dir DIR: directory containing noise masks (default: output_directory/manualNoiseMasks, only used for 3T data)
     -pw | --preserve-workdir: preserve working directories after processing (default: working directories are deleted)

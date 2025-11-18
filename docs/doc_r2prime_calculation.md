@@ -227,6 +227,8 @@ The main entry point is `r2prime_creation_main.sh`, which automatically discover
 ./r2prime_creation_main.sh [options] -cont <container> -pdw <pdw_dir> -r2 <r2_dir> -r2s <r2s_dir> -o <output_dir>
 ```
 
+> Currently, there are still some hard-coded paths left in the code. You can find information about that in the [Open ToDo's](docs/todos.md).
+
 ### Command-line Options
 
 #### Mandatory Flags

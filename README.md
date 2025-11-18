@@ -126,6 +126,8 @@ For 3T data, create manual noise masks:
 
 [full documentation](docs/doc_t2_processing.md)
 
+> Currently, there are still some hard-coded paths left in the code. You can find information about that in the [Open ToDo's](docs/todos.md).
+
 #### Basic Syntax
 
 ```bash
@@ -192,6 +194,8 @@ For 3T data, create manual noise masks:
 <h3 id="use-r2p-calculation-pipeline">R2' Calculation Pipeline</h>
 
 [full documentation](docs/doc_r2prime_calculation.md)
+
+> Currently, there are still some hard-coded paths left in the code. You can find information about that in the [Open ToDo's](docs/todos.md).
 
 #### Basic Syntax
 
