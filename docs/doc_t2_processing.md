@@ -58,7 +58,7 @@ The pipeline is designed for both **3T** and **7T** data, with field-strength-sp
 - **SLURM** - For job scheduling
 - **[batch_gnlc repository](https://github.com/nkuegler/batch_gnlc/)** - with all its dependencies
 
-The provided singularity container contains a full working environment with all necessary binaries for running the scripts in this repository (batch_gnlc repository is still needed and the GNLC step does not run insie the container yet). \
+The provided singularity container contains a full working environment with all necessary binaries for running the scripts in this repository (batch_gnlc repository is still needed and the GNLC step does not run inside the container yet). \
 **If you are planning to avoid the container**, you need to set set up an environment containing the following software tools and packages (and adjust the code in several locations):
 - **PyMRItools** - Checked out at commit `7d29483`
   - GitHub: [schmidt-jo/PyMRItools](https://github.com/schmidt-jo/PyMRItools)
@@ -230,6 +230,25 @@ T2 Fitting Output (working_dir/t2fit/ → output_dir/)
     ├── T2map.nii + .json
     └── TB1map.nii + .json
 ```
+
+### Data Discovery and Sanity Checks
+
+Before submitting the jobs for processing each session, the main script (`t2_processing_main.sh`) performs several validation checks:
+
+1. **MESE File Detection**
+   - Searches for files matching the pattern `*mese*` in the `anat/` directory (case-insensitive comparison)
+   - Requirement: At least one MESE file must be present. Otherwise the session is skipped.
+
+2. **TB1AFI File Detection**
+   - Searches for files matching the pattern `*tb1afi*` in the corresponding `fmap/` directory (case-insensitive comparison)
+   - Requirement: At least one TB1AFI file must be present. Otherwise the session is skipped.
+
+3. **Existing Results Check**
+   - Scans the working directory for previously processed files
+   - Pattern: `working_dir/*/<subject>/<session>/anat/*.nii*`
+   - If existing files are found, the session is skipped to prevent re-processing.
+
+These checks ensure that only complete, valid sessions are processed and prevent unnecessary re-computation of already-completed work.
 
 ### Job Dependencies
 

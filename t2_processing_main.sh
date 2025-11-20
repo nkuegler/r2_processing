@@ -36,6 +36,11 @@ DESCRIPTION:
     The script searches for directories matching the pattern: parent_directory/sub-*/ses-*/anat/
     and submits a series of SLURM jobs for T2 processing pipeline in each anat directory found.
     
+    Sanity Checks before submitting jobs:
+    - Verifies MESE files exist in the anat directory
+    - Verifies TB1AFI files exist in the corresponding fmap directory
+    - Checks for existing processed files in working directory to avoid re-processing
+    
     Processing pipeline:
     1. Denoising (Python) - runs first
     2. Gradient non-linearity correction (bash) - depends on denoising job
@@ -453,6 +458,27 @@ for anat_path in "${anat_dirs[@]}"; do
     if [[ $anat_path =~ .*(sub-[^/]+)/(ses-[^/]+)/anat.* ]]; then
         subject="${BASH_REMATCH[1]}"
         session="${BASH_REMATCH[2]}"
+
+        # Check for MESE files in anat directory (case-insensitive)
+        mese_files=$(find "$anat_path" -maxdepth 1 -iname "*mese*" -type f 2>/dev/null | wc -l)
+        if [[ $mese_files -eq 0 ]]; then
+            echo "  No MESE files found in $anat_path"
+            echo "  Skipping this session."
+            ((skipped_sessions++))
+            ((job_counter++))
+            continue
+        fi
+
+        # Check for TB1AFI files in fmap directory (case-insensitive)
+        fmap_path="${anat_path%/anat}/fmap"
+        afi_files=$(find "$fmap_path" -maxdepth 1 -iname "*tb1afi*" -type f 2>/dev/null | wc -l)
+        if [[ $afi_files -eq 0 ]]; then
+            echo "  No TB1AFI files found in $fmap_path"
+            echo "  Skipping this session."
+            ((skipped_sessions++))
+            ((job_counter++))
+            continue
+        fi
         
         # Check for existing .nii files in working directory structure
         existing_files=$(find "$working_dir"/*/"$subject"/"$session"/anat -maxdepth 1 -name "*.nii*" 2>/dev/null | wc -l)
