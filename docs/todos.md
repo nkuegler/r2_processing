@@ -13,6 +13,10 @@
    - full cleanup only works if all sessions are processed -> therefore, no jobs should be submitted if no input data is found for a session
    - goal should be to not specify any -sub -ses and still get valid output for all the sessions that contain MESE and AFI data
 
+1. **sform differences between TB1map and R2map**
+   - slight differences (roughly third digit after comma -> maybe rounding inaccuracy) in sform matrices between resulting TB1map and R2map (should be identical after resampling)
+   - The B1 map is resampled into the R2 space but the sform matrices differ slightly. This shouldn't have a huge effect (due to low resolution and smoothing during resampling) but it may be worth adjusting this for good measure.
+
 2. **Hard-coded paths** 
    - the following scripts contain hard coded variables -> solve by using relative paths and/or by using singularity container
       - `t2_processing_main.sh`: gnlc_dir, gnlc_slurm_log_dir, --output (twice in the script and twice in the dynamic creation of the bridge jobs, which should go into a separate script anyway)
