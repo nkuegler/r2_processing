@@ -112,22 +112,18 @@ if [ "$coregistered_result" = "$output_file" ]; then
     echo "Coregistered result is already in output directory."
     echo "Coregistration completed successfully. Result available at:"
     echo "   $output_file"
-elif [ -f "$output_file" ]; then
-    echo "File already exists in output directory: $output_file"
-    echo "Removing old version and moving new result..."
-    rm -f "$output_file"
-    rm -f "${output_file%.nii}.json"
-    mv "$coregistered_result" "$output_dir"
-    if [ $? -eq 0 ]; then
-        echo "Coregistration completed successfully. Result saved to:" 
-        echo "   $output_file"
-    else
-        echo "Error: Failed to move coregistered result"
-        exit 1
-    fi
 else
+    # Check if output file already exists
+    if [ -f "$output_file" ]; then
+        echo "File already exists in output directory: $output_file"
+        echo "Removing old version and moving new result..."
+        rm -f "$output_file"
+        rm -f "${output_file%.nii}.json"
+    else
+        echo "Moving coregistered result to $output_dir"
+    fi
+
     # Move the coregistered result to the specified output location
-    echo "Moving coregistered result to $output_dir"
     mv "$coregistered_result" "$output_dir"
     # Check if the move was successful
     if [ $? -eq 0 ]; then
