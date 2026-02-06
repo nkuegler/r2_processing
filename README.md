@@ -111,7 +111,7 @@ Ensure gradient coefficients (`.grad` files) are available for your scanner in t
 #### Manual Noise Masks (3T Data Only)
 For 3T data, create manual noise masks:
 1. Open echo-01 of MESE data in viewer (FSLeyes, etc.)
-2. Draw ROI containing only noise voxels (outside brain, avoid GRAPPA artifacts)
+2. Draw ROI containing only noise voxels (outside brain, avoid GRAPPA artifacts, [example masks](docs/doc_t2_processing.md#field-strength-considerations))
 3. Save as: `{subject}_{session}_acq-semc_echo-01_MESE_noiseMaskManual.nii`
 4. Place in noise mask directory (e.g., `output_dir/manualNoiseMasks/`)
 

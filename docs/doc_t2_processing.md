@@ -495,6 +495,10 @@ For my 3T data, the `autodmri` approach (`pymritools.processing.denoising.extrac
 3. Save as binary NIfTI: `{subject}_{session}_acq-semc_echo-01_MESE_noiseMaskManual.nii`
 4. Place in noise mask directory specified by `--noise-mask-dir`
 
+<img src="figs/manualNoiseMask_example_forR2_3T.png" alt="Example Manually drawn Noise Mask" width="60%">
+
+*Example of a manually drawn noise mask (red) overlaid on the first echo of a 3T MESE acquisition. The color bar is scaled to a small maximum value to visualize noise characteristics. The mask should only include noise voxels outside the brain tissue while avoiding GRAPPA aliasing artifacts.*
+
 **Important Note:** Manual noise masks may include small portions of GRAPPA aliasing, potentially violating the independent and identically distributed (i.i.d.) Gaussian noise assumption of MP-PCA denoising. This may lead to slightly suboptimal denoising results.
 > The MP-PCA denoising compares the empirical eigenvalue spectrum of the data with the theoretical Marchenko-Pastur distribution, which is derived under the model of i.i.d. Gaussian noise with zero mean. Poorly drawn noise maps may lead to violation of the key assumption of the denoising method.
 
