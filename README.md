@@ -266,6 +266,7 @@ For 3T data, create manual noise masks:
 # Step 2: R2' Calculation (after T2 processing and qMRI complete)
 ./r2prime_calculation/r2prime_creation_main.sh \
   -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif \
+  -pw \
   -pdw /data/derivatives/LCPCA_distCorr \
   -r2 /data/derivatives/relax_R2 \
   -r2s /data/derivatives/qMRI_noB1corr \
@@ -291,6 +292,7 @@ For 3T data, create manual noise masks:
 # Step 2: R2' Calculation
 ./r2prime_calculation/r2prime_creation_main.sh \
   -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif \
+  -pw \
   -pdw /data/derivatives/LCPCA_distCorr \
   -r2 /data/derivatives/relax_R2 \
   -r2s /data/derivatives/qMRI_noB1corr \
