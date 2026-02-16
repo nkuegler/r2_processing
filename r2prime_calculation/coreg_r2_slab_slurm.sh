@@ -107,8 +107,8 @@ if [ ! -d "$output_dir" ]; then
     mkdir -p "$output_dir"
 fi
 
-# Check if the file is already in the output directory
-if [ "$coregistered_result" = "$output_file" ]; then
+# Check if the file is already in the output directory (use realpath to normalize paths)
+if [ "$(realpath -m "$coregistered_result")" = "$(realpath -m "$output_file")" ]; then
     echo "Coregistered result is already in output directory."
     echo "Coregistration completed successfully. Result available at:"
     echo "   $output_file"

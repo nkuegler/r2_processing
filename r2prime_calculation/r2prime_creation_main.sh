@@ -495,7 +495,8 @@ for anat_path in "${anat_dirs[@]}"; do
         coreg_ref_img="$target_working_dir/$fname_ref_echoSum"
 
         # does not run in custom container for now
-        coreg_cmd="sbatch -p short,group_servers,gr_weiskopf --dependency=afterok:$ref_sum_job_id --output=\"$logs_dir/%j_coregR2_${subject}_${session}.out\" \"$coreg_script\" \"$coreg_moving_img\" \"$coreg_ref_img\" \"$target_working_dir\""
+        # coregistered R2 is saved directly into the R2 input directory (anat_path)
+        coreg_cmd="sbatch -p short,group_servers,gr_weiskopf --dependency=afterok:$ref_sum_job_id --output=\"$logs_dir/%j_coregR2_${subject}_${session}.out\" \"$coreg_script\" \"$coreg_moving_img\" \"$coreg_ref_img\" \"$anat_path\""
         
         if [[ "$dry_run" == "false" ]]; then
 
@@ -537,7 +538,7 @@ for anat_path in "${anat_dirs[@]}"; do
         coreg_job_id="${coreg_job_ids[$session_id]}"
 
         # Construct paths for R2' calculation
-        r2_map="$target_working_dir/coreg_${subject}_${session}_${r2_suffix}.nii"
+        r2_map="$anat_path/coreg_${subject}_${session}_${r2_suffix}.nii"
         r2star_map="$r2s_dir/$subject/$session/anat/${subject}_${session}_${r2s_suffix}.nii"
         fname_r2prime="${subject}_${session}_${r2p_suffix}.nii.gz" # only filename, no path
 

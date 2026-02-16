@@ -41,7 +41,7 @@ The R2' calculation pipeline performs the following operations:
 1. **Reference Image Creation** - Sums all PDw (Proton Density weighted) echoes to create a high-SNR reference image 
    - all qMRI maps are present in the PDw space
    - PDw echoes should be denoised and gradient nonlinearity corrected
-2. **R2 Slab Coregistration** - Aligns R2 maps (from T2 processing) to the PDw reference space using SPM12 (*Estimate and Reslice*)
+2. **R2 Slab Coregistration** - Aligns R2 maps (from T2 processing) to the PDw reference space using SPM12 (*Estimate and Reslice*); the coregistered R2 map and its JSON sidecar are saved directly into the R2 input directory
 3. **R2' Calculation** - Computes `R2' = R2* - R2` with appropriate masking and validation
 4. **Cleanup** - Removes intermediate working directories (optional)
 
@@ -132,6 +132,7 @@ The pipeline consists of four main stages, executed sequentially for each subjec
 │ - Align R2 map to PDw reference space using SPM12            │
 │ - Rigid body transformation (6 DOF)                          │
 │ - 4th degree B-spline interpolation                          │
+│ - Coregistered output saved to R2 input directory            │
 └──────────────────────────┬───────────────────────────────────┘
                            │
                            ↓
@@ -165,7 +166,7 @@ Reference Image (working_dir/)
     └── PDw_echoes_sum.nii (sum of all PDw echoes)
     │
     ↓
-Coregistered R2 (working_dir/)
+Coregistered R2 (r2_dir/)
     │
     └── coreg_*_R2map.nii (R2 aligned to PDw space)
     │
@@ -401,7 +402,7 @@ PDw (Proton Density weighted) images are used because:
    - Uses normalized mutual information as cost function
 
 3. **Result Management**
-   - Moves coregistered file to output directory
+   - Moves coregistered file to the R2 input directory
    - Adds `coreg_` prefix to filename
    - Overwrites existing files if present
    - Validates successful completion
@@ -649,10 +650,16 @@ output_directory/
             └── anat/
                 ├── PDw_echoes_sum.nii
                 ├── PDw_echoes_sum.json
-                ├── coreg_*_R2map.nii
-                ├── coreg_*_R2map.json
                 ├── r2s_minus_r2.nii.gz
                 └── r2pos_mask.nii.gz
+
+r2_directory/
+└── sub-XXX/
+    └── ses-YY/
+        └── anat/
+            ├── *_R2map.nii          (original R2 map)
+            ├── coreg_*_R2map.nii    (coregistered R2 map, added by pipeline)
+            └── coreg_*_R2map.json   (coregistration metadata, added by pipeline)
 ```
 
 **Note:** The `Supplementary/` directory is automatically removed after processing unless `--preserve-workdir` is specified.
@@ -854,4 +861,4 @@ derivatives/
 
 **Author:** Niklas Kuegler (kuegler@cbs.mpg.de)
 
-**Last Updated:** November 03, 2025
+**Last Updated:** February 15, 2026
