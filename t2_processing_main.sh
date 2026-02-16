@@ -590,7 +590,7 @@ for anat_path in "${anat_dirs[@]}"; do
                 --job-name=bridge_mese_${session_id} \
                 --output=/data/u_kuegler_software/git/r2_processing/logs/denoise/%j_bridge_mese_${session_id}.out \
                 "$gnlc_mese_bridge_script" \
-                "$gnlc_cmd_mese")
+                "$gnlc_cmd_mese" "$subject" "$session" "$output_dir_denoise" "$output_dir_gnlc" "$mese_gnlc_job_name")
 
             echo "    $bridge_mese_gnlc_out"
             echo "    MESE GNLC will use custom job name: $mese_gnlc_job_name"
@@ -606,7 +606,7 @@ for anat_path in "${anat_dirs[@]}"; do
                 --job-name=bridge_afi_${session_id} \
                 --output=/data/u_kuegler_software/git/r2_processing/logs/denoise/%j_bridge_afi_${session_id}.out \
                 "$gnlc_afi_bridge_script" \
-                "$gnlc_cmd_afi")
+                "$gnlc_cmd_afi" "$subject" "$session" "$output_dir_denoise" "$output_dir_gnlc" "$afi_gnlc_job_name")
 
             echo "    $bridge_afi_out"
             echo "    AFI GNLC will use custom job name: $afi_gnlc_job_name"
