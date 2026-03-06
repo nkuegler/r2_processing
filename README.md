@@ -1,6 +1,6 @@
 # R2 Processing Pipeline - Quick Start Guide
 
-This repository contains automated pipelines for processing Multi-Echo Spin-Echo (MESE) MRI data to generate T2/R2 maps and R2' (R2 prime) maps. The pipelines use PyMRItools, FSL, SPM12, and other neuroimaging tools within a SLURM-scheduled batch processing framework.
+This repository contains automated pipelines for processing Multi-Echo Spin-Echo (MESE) MRI data to generate T2/R2 maps and R2' (R2 prime) maps. The pipelines use **[PyMRItools (by Jochen Schmidt)](https://github.com/schmidt-jo/PyMRItools)**, FSL, SPM12, and other neuroimaging tools within a SLURM-scheduled batch processing framework.
 
 > **For detailed documentation**, see:
 > - [T2 Processing Pipeline Documentation](docs/doc_t2_processing.md)

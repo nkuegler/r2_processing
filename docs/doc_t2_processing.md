@@ -1,6 +1,6 @@
 # Documentation: T2 Processing Pipeline
 
-This page describes the T2 processing pipeline for Multi-Echo Spin-Echo (MESE) MRI data. The pipeline uses PyMRItools (by Jochen Schmidt) to calculate R2 and T2 maps from MESE data with B1+ field inhomogeneity correction.
+This page describes the T2 processing pipeline for Multi-Echo Spin-Echo (MESE) MRI data. The pipeline uses **PyMRItools (by Jochen Schmidt)** to calculate R2 and T2 maps from MESE data with B1+ field inhomogeneity correction.
 
 > **PyMRItools** is a Python package for processing quantitative MRI data. This pipeline requires PyMRItools checked out at commit `7d29483`.<br>
 > For more information on PyMRItools, please refer to the [GitHub repository](https://github.com/schmidt-jo/PyMRItools).<br>
