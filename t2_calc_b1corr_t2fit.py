@@ -145,7 +145,7 @@ working_dir_vis.mkdir(exist_ok=True, parents=True)
 
 ### settings T2 fitting
 if magnetic_field == 7.0:
-    path_db = plib.Path("/data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/emc/emc_database_7T_semc_0p6.pkl")
+    path_db = plib.Path("/data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/emc/emc_database_7T_semc_0p6_new.pkl")
 elif magnetic_field == 3.0:
     path_db = plib.Path("/data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/emc/db_mese_3T_etl10.pkl")
 else:
@@ -224,7 +224,7 @@ b1 = calculate_b1(
     b1_data=afi_gnlc, r_tr21=trRatio, flip_angle_set_deg=fa, smoothing_kernel=3
 )
 b1_err = calculate_error_map(
-    b1_data=afi_gnlc, mask=noise_mask_afi, flip_angle_set_deg=fa, path_visuals=working_dir
+    b1_data=afi_gnlc, mask=noise_mask_afi, flip_angle_set_deg=fa, ratio_tr_n=trRatio, path_visuals=working_dir
 )
 
 # calculate a relative error map
@@ -319,7 +319,7 @@ db = DB.load(path_db)
 # get torch tensors
 # make sure that you have checked out the correct commit of pymritools 
 # (otherwise the get_torch_tensors_t1t2b1e() function may raise an error)
-db_torch_mag, db_torch_phase = db.get_torch_tensors_t1t2b1e()
+db_torch_mag, db_torch_phase = db.get_torch_tensors_t1t2b1b0e()
 
 # normalize database, use magnitude only for now
 db_mag_norm = torch.linalg.norm(db_torch_mag, dim=-1, keepdim=True)

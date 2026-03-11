@@ -30,7 +30,7 @@ This repository contains automated pipelines for processing Multi-Echo Spin-Echo
 **Output:** T2 maps, R2 maps, B1+ maps
 
 **Processing Steps:**
-1. MP-PCA Denoising + Noise Bias Correction
+1. LC-PCA Denoising + Noise Bias Correction
 2. Gradient Non-linearity Correction (GNLC)
 3. B1+ Field Mapping (AFI + EMC)
 4. Dictionary-based T2/R2 Fitting

@@ -8,7 +8,7 @@ Denoising and Noise Bias Correction Script
 DESCRIPTION:
     This script performs denoising and noise bias correction on
     MESE data for a single subject/session using PyMRItools (https://github.com/schmidt-jo/PyMRItools). 
-    The script applies MP-PCA denoising followed by noise bias correction to improve signal
+    The script applies LC-PCA denoising followed by noise bias correction to improve signal
     quality for subsequent T2 fitting. It handles both 7T (automatic noise masking)
     and 3T (manual noise masking) data processing workflows.
 
@@ -29,7 +29,7 @@ OPTIONAL ARGUMENTS:
 OPERATIONS PERFORMED:
     1. Loading and concatenation of MESE and AFI acquisitions into 4D volumes
     2. AFI resampling to MESE acquisition space using ANTs (for visualization only)
-    3. MP-PCA denoising of MESE acquisitions
+    3. LC-PCA denoising of MESE acquisitions
     4. Noise mask extraction (automatic for 7T, must be drawn manually for 3T)
     5. Noise statistics calculation for bias correction parameters
     6. Noise bias correction
@@ -77,7 +77,7 @@ import os
 
 logging.basicConfig(level=logging.INFO)
 
-from pymritools.processing.denoising import denoise_mppca
+from pymritools.processing.denoising import denoise_lcpca
 from pymritools.processing.denoising import extract_noise_mask, extract_noise_stats_from_mask, noise_bias_correction
 
 import t2_calc_helper as helper
@@ -237,7 +237,7 @@ plot_helper.plot_mese4d_afi4dRe(mese_4d,
 ### DENOISING
 
 # assumes torch tensor input
-denoised_data, _, _ = denoise_mppca(input_data=mese_4d, p=1, device=torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"))
+denoised_data, _, _ = denoise_lcpca(input_data=mese_4d, p=1, device=torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"))
 
 # we can save this for reference
 fname_mese_4d_denoised = fname_mese_4d.replace(mese_suffix, f"proc-denoised_{mese_suffix}")

@@ -38,7 +38,7 @@ The scripts that are described on this page are part of the **r2_processing** re
 
 The T2 processing pipeline performs the following operations on Multi-Echo Spin-Echo (MESE) data:
 
-1. **MP-PCA Denoising** - Removes noise while preserving signal using Marchenko-Pastur principal component analysis
+1. **LC-PCA Denoising** - Removes noise while preserving signal using Marchenko-Pastur principal component analysis
 2. **Noise Bias Correction** - Corrects for noise floor bias in magnitude images
 3. **Gradient Non-linearity Correction (GNLC)** - Corrects geometric distortions from gradient field non-linearities
 4. **B1+ Field Mapping** - Calculates B1+ transmit field maps from Actual Flip Angle Imaging (AFI) data
@@ -169,7 +169,7 @@ The pipeline consists of four main stages, executed sequentially for each subjec
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │ Stage 1: Denoising & Noise Bias Correction                   │
-│ - MP-PCA denoising of MESE data                              │
+│ - LC-PCA denoising of MESE data                              │
 │ - Noise mask extraction (automatic 7T / manual 3T)           │
 │ - Noise statistics calculation                               │
 │ - Noise bias correction                                      │
@@ -444,7 +444,7 @@ The main entry point is `t2_processing_main.sh`, which automatically discovers a
    - Uses linear interpolation for smooth field mapping
    - Saved for visualization purposes only
 
-3. **MP-PCA Denoising**
+3. **LC-PCA Denoising**
    - Applies Marchenko-Pastur Principal Component Analysis
    - Exploits redundancy in multi-echo data
    - Preserves signal while removing thermal noise
@@ -474,7 +474,7 @@ The main entry point is `t2_processing_main.sh`, which automatically discovers a
 | File | Description |
 |------|-------------|
 | `*_acq-semc4D_MESE.nii` | Concatenated 4D MESE volume |
-| `*_proc-denoised_MESE.nii` | MP-PCA denoised MESE data |
+| `*_proc-denoised_MESE.nii` | LC-PCA denoised MESE data |
 | `*_proc-denoisedNbc_MESE.nii` | Denoised + noise bias corrected MESE |
 | `*_acq-stx4D_TB1AFI.nii` | Concatenated 4D AFI volume |
 | `*_proc-resampled_TB1AFI.nii` | AFI resampled to MESE space |
@@ -499,8 +499,8 @@ For my 3T data, the `autodmri` approach (`pymritools.processing.denoising.extrac
 
 *Example of a manually drawn noise mask (red) overlaid on the first echo of a 3T MESE acquisition. The color bar is scaled to a small maximum value to visualize noise characteristics. The mask should only include noise voxels outside the brain tissue while avoiding GRAPPA aliasing artifacts.*
 
-**Important Note:** Manual noise masks may include small portions of GRAPPA aliasing, potentially violating the independent and identically distributed (i.i.d.) Gaussian noise assumption of MP-PCA denoising. This may lead to slightly suboptimal denoising results.
-> The MP-PCA denoising compares the empirical eigenvalue spectrum of the data with the theoretical Marchenko-Pastur distribution, which is derived under the model of i.i.d. Gaussian noise with zero mean. Poorly drawn noise maps may lead to violation of the key assumption of the denoising method.
+**Important Note:** Manual noise masks may include small portions of GRAPPA aliasing, potentially violating the independent and identically distributed (i.i.d.) Gaussian noise assumption of LC-PCA denoising. This may lead to slightly suboptimal denoising results.
+> The LC-PCA denoising compares the empirical eigenvalue spectrum of the data with the theoretical Marchenko-Pastur distribution, which is derived under the model of i.i.d. Gaussian noise with zero mean. Poorly drawn noise maps may lead to violation of the key assumption of the denoising method.
 
 ---
 
@@ -884,8 +884,8 @@ ls -lh logs/gnlc/
 ## References
 
 - **PyMRItools:** Schmidt J. et al. (https://github.com/schmidt-jo/PyMRItools)
-- **MP-PCA Denoising:** Veraart J. et al., NeuroImage 2016
-- **Noise Bias Correction:** Gudbjartsson H. & Patz S., MRM 1995
+- **LC-PCA Denoising:** Does M. et al., Magn Reson Med, 2019 & Bazin P.-L., Front Neurosci, 2019
+- **Noise Bias Correction:** Veraart J. et al., NeuroImage 2016
 - **AFI B1+ Mapping:** Yarnykh V., MRM 2007
 - **Dictionary Matching:** Weiskopf N. et al., Front Neurosci 2014
 
@@ -893,4 +893,4 @@ ls -lh logs/gnlc/
 
 **Author:** Niklas Kuegler (kuegler@cbs.mpg.de)
 
-**Last Updated:** October 30, 2025
+**Last Updated:** March 11, 2026
