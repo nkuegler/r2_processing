@@ -76,7 +76,7 @@ parent_directory/
 
 For MPI CBS employees: Pre-built container available at:
 ```
-/data/p_gr_weiskopf_software/singularity/pymritools.sif
+/data/p_gr_weiskopf_software/singularity/pymritools_7d29483.sif
 ```
 
 Or build your own using provided container build file (see [detailed documentation](docs/doc_t2_processing.md#container-setup)).
@@ -162,7 +162,7 @@ For 3T data, create manual noise masks:
 **7T Processing (All Subjects):**
 ```bash
 ./t2_processing_main.sh \
-  -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif \
+  -cont /data/p_gr_weiskopf_software/singularity/pymritools_7d29483.sif \
   -b 7 \
   Terra \
   /data/bids_input \
@@ -172,7 +172,7 @@ For 3T data, create manual noise masks:
 **3T Processing (Specific Subject):**
 ```bash
 ./t2_processing_main.sh \
-  -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif \
+  -cont /data/p_gr_weiskopf_software/singularity/pymritools_7d29483.sif \
   -b 3 \
   -fa 60.0 \
   -tr 3.0 \
@@ -229,7 +229,7 @@ For 3T data, create manual noise masks:
 **Process All Sessions:**
 ```bash
 ./r2prime_calculation/r2prime_creation_main.sh \
-  -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif \
+  -cont /data/p_gr_weiskopf_software/singularity/pymritools_7d29483.sif \
   -pdw /data/derivatives/LCPCA_distCorr \
   -r2 /data/derivatives/relax_R2 \
   -r2s /data/derivatives/qMRI_noB1corr \
@@ -239,7 +239,7 @@ For 3T data, create manual noise masks:
 **Process Specific Subject/Session:**
 ```bash
 ./r2prime_calculation/r2prime_creation_main.sh \
-  -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif \
+  -cont /data/p_gr_weiskopf_software/singularity/pymritools_7d29483.sif \
   -sub sub-001 \
   -ses ses-05 \
   -pdw /data/derivatives/LCPCA_distCorr \
@@ -257,7 +257,7 @@ For 3T data, create manual noise masks:
 ```bash
 # Step 1: T2 Processing
 ./t2_processing_main.sh \
-  -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif \
+  -cont /data/p_gr_weiskopf_software/singularity/pymritools_7d29483.sif \
   -b 7 \
   Terra \
   /data/bids_input \
@@ -265,7 +265,7 @@ For 3T data, create manual noise masks:
 
 # Step 2: R2' Calculation (after T2 processing and qMRI complete)
 ./r2prime_calculation/r2prime_creation_main.sh \
-  -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif \
+  -cont /data/p_gr_weiskopf_software/singularity/pymritools_7d29483.sif \
   -pw \
   -pdw /data/derivatives/LCPCA_distCorr \
   -r2 /data/derivatives/relax_R2 \
@@ -280,7 +280,7 @@ For 3T data, create manual noise masks:
 
 # Step 1: T2 Processing
 ./t2_processing_main.sh \
-  -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif \
+  -cont /data/p_gr_weiskopf_software/singularity/pymritools_7d29483.sif \
   -b 3 \
   -fa 60.0 \
   -tr 3.0 \
@@ -291,7 +291,7 @@ For 3T data, create manual noise masks:
 
 # Step 2: R2' Calculation
 ./r2prime_calculation/r2prime_creation_main.sh \
-  -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif \
+  -cont /data/p_gr_weiskopf_software/singularity/pymritools_7d29483.sif \
   -pw \
   -pdw /data/derivatives/LCPCA_distCorr \
   -r2 /data/derivatives/relax_R2 \

@@ -103,7 +103,7 @@ The pipeline uses a Singularity container with PyMRItools and all dependencies. 
 
 ### Building the Container
 
-> **Note:** If you are working in the compute infrastructure of the MPI CBS (Leipzig, Germany), the **pre-built container** may be found at: `/data/p_gr_weiskopf_software/singularity/pymritools.sif`
+> **Note:** If you are working in the compute infrastructure of the MPI CBS (Leipzig, Germany), the **pre-built container** may be found at: `/data/p_gr_weiskopf_software/singularity/pymritools_7d29483.sif`
 
 If that does not work for you, you have to build the container yourself. Navigate to your working directory and prepare the container build files:
 > **Another hint for MPI CBS members:** It seems to be problematic to build a container directly in storage unified `/data`. Move the files to `/tmp` (on your local machine or a compute server) and build it there.
@@ -121,16 +121,16 @@ Build the Singularity container:
 
 ```bash
 # With root access:
-sudo singularity build pymritools.sif pymritools_singularity.def
+sudo singularity build pymritools_7d29483.sif pymritools_singularity.def
 
 # Without root (using fakeroot):
-singularity build --fakeroot pymritools.sif pymritools_singularity.def
+singularity build --fakeroot pymritools_7d29483.sif pymritools_singularity.def
 ```
 
 After building, move the container to your desired location:
 
 ```bash
-mv pymritools.sif /path/to/your/directory
+mv pymritools_7d29483.sif /path/to/your/directory
 ```
 
 The container includes:
@@ -149,11 +149,11 @@ The container includes:
 
 Once built, you can run commands inside the container using:
 ```bash
-singularity exec pymritools.sif <command>
+singularity exec pymritools_7d29483.sif <command>
 ```
 or open an interactive shell inside the container using:
 ```bash
-singularity shell pymritools.sif
+singularity shell pymritools_7d29483.sif
 ```
 
 The container automatically activates the conda environment on execution.
@@ -358,7 +358,7 @@ The main entry point is `t2_processing_main.sh`, which automatically discovers a
 
 ```bash
 ./t2_processing_main.sh \
-  -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif \
+  -cont /data/p_gr_weiskopf_software/singularity/pymritools_7d29483.sif \
   Terra \
   /data/input/bids \
   /data/output/derivatives/relax_R2
@@ -369,7 +369,7 @@ The main entry point is `t2_processing_main.sh`, which automatically discovers a
 
 ```bash
 ./t2_processing_main.sh \
-  -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif \
+  -cont /data/p_gr_weiskopf_software/singularity/pymritools_7d29483.sif \
   -b 3 \
   -fa 60.0 \
   -tr 3.0 \
@@ -384,7 +384,7 @@ The main entry point is `t2_processing_main.sh`, which automatically discovers a
 ```bash
 # Process specific subjects
 ./t2_processing_main.sh \
-  -cont /path/to/pymritools.sif \
+  -cont /path/to/pymritools_7d29483.sif \
   -sub "sub-001,sub-002" \
   Terra \
   /data/input/bids \
@@ -392,7 +392,7 @@ The main entry point is `t2_processing_main.sh`, which automatically discovers a
 
 # Process specific sessions for specific subjects
 ./t2_processing_main.sh \
-  -cont /path/to/pymritools.sif \
+  -cont /path/to/pymritools_7d29483.sif \
   -sub "sub-001" \
   -ses "ses-01,ses-02" \
   Terra \
@@ -404,7 +404,7 @@ The main entry point is `t2_processing_main.sh`, which automatically discovers a
 
 ```bash
 ./t2_processing_main.sh \
-  -cont /path/to/pymritools.sif \
+  -cont /path/to/pymritools_7d29483.sif \
   -w /scratch/temp \
   --preserve-workdir \
   Prisma_fit \
@@ -416,7 +416,7 @@ The main entry point is `t2_processing_main.sh`, which automatically discovers a
 
 ```bash
 ./t2_processing_main.sh \
-  -cont /path/to/pymritools.sif \
+  -cont /path/to/pymritools_7d29483.sif \
   --dry-run \
   -t 10 \
   Terra \

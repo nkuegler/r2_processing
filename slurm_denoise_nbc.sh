@@ -29,7 +29,7 @@
 #
 # EXAMPLE:
 #   sbatch slurm_denoise_nbc.sh \
-#     /path/to/pymritools.sif sub-001 ses-01 7 \
+#     /path/to/pymritools_7d29483.sif sub-001 ses-01 7 \
 #     /bids/input /output/denoise /noise/masks
 #
 # NOTES:

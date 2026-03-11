@@ -33,7 +33,7 @@
 #
 # EXAMPLE:
 #   sbatch slurm_b1corr_t2fit.sh \
-#     /path/to/pymritools.sif sub-001 ses-01 7 \
+#     /path/to/pymritools_7d29483.sif sub-001 ses-01 7 \
 #     /input/gnlc /work/t2fit /output 5.0 55.0 /input/denoise
 #
 # NOTES:
