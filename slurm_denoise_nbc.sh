@@ -7,7 +7,7 @@
 # DESCRIPTION:
 #   This script performs T2 denoising and noise bias correction processing on
 #   MESE data for a single subject/session using PyMRItools within a
-#   Singularity container. The script applies MP-PCA denoising followed by
+#   Singularity container. The script applies LC-PCA denoising followed by
 #   noise bias correction to improve signal quality for subsequent T2 fitting.
 #
 # USAGE:
@@ -23,7 +23,7 @@
 #   NOISEMASK_DIR   - (Optional) Path to manual noise mask files (required for 3T)
 #
 # OPERATIONS PERFORMED:
-#   1. MP-PCA denoising of MESE acquisitions
+#   1. LC-PCA denoising of MESE acquisitions
 #   2. Noise bias correction using manually-drawn or automatically created noise masks
 #   3. Visualization of the results for quality control of denoised data
 #

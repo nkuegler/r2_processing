@@ -123,8 +123,8 @@ From: rocm/dev-ubuntu-24.04:latest
     pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm6.2.4
     
     # now we should have a functioning conda env with all necessary dependencies
-    # we now want to clone the specific commit (335c40b) of our repository and install the package without dependencies using pip
-    pip3 install --no-deps git+https://github.com/schmidt-jo/PyMRItools.git@335c40b#egg=PyMRItools
+    # we now want to clone the specific commit (7d29483) of our repository and install the package without dependencies using pip
+    pip3 install --no-deps git+https://github.com/schmidt-jo/PyMRItools.git@7d29483#egg=PyMRItools
     
     conda deactivate
 
