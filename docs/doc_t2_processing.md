@@ -138,7 +138,7 @@ The container includes:
 - Miniforge3 (minimal Conda distribution)
 - Conda environment "mri_tools_env" with all dependencies
 - PyTorch with ROCm 6.2.4 GPU support
-- PyMRItools (commit `7d29483`)
+- PyMRItools (commit `335c40b`)
 - Additional packages: triton, autodmri, twixtools, pypulseq
 - Additional software: FSL, ANTs
 
