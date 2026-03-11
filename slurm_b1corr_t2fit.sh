@@ -99,6 +99,7 @@ cmd_args=(
 )
 
 singularity exec "${CONTAINER_PATH}" "${cmd_args[@]}"
+EXIT_CODE=$?
 
 
 ### for use in the CBS infrastructure (not in the container):
@@ -118,11 +119,11 @@ singularity exec "${CONTAINER_PATH}" "${cmd_args[@]}"
 
 echo "------------------------------------------"
 # Check if the processing was successful
-if [ $? -eq 0 ]; then
+if [ ${EXIT_CODE} -eq 0 ]; then
     echo "B1+ correction and T2 fitting completed successfully"
 else
-    echo "Error: B1+ correction and T2 fitting failed"
-    exit 1
+    echo "Error: B1+ correction and T2 fitting failed (exit code: ${EXIT_CODE})"
+    exit ${EXIT_CODE}
 fi
 
 # Terminate nvidia-smi
