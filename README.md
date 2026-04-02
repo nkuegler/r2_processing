@@ -6,6 +6,9 @@ This repository contains automated pipelines for processing Multi-Echo Spin-Echo
 > - [T2 Processing Pipeline Documentation](docs/doc_t2_processing.md)
 > - [R2' Calculation Pipeline Documentation](docs/doc_r2prime_calculation.md)
 
+> [!IMPORTANT]
+> If you are planning to use an T2 pattern database created with and older version of PyMRItools, please ensure that there are no issues regarding the backward compatibility (main branch operates at PyMRItools commit 335c40b). The branch `workingStatus_IronSleep` uses a legacy version of PyMRItools and the contains the corresponding container build file (commit 7d29483). The most secure way to ensure compatibility is to use the same version of PyMRItools for both the database creation and the T2 fitting code.
+
 ---
 
 ## Table of Contents
