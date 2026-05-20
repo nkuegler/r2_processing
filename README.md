@@ -40,13 +40,14 @@ This repository contains automated pipelines for processing Multi-Echo Spin-Echo
 
 ### R2' Calculation Pipeline
 
-**Input:** R2 maps (from T2 processing), R2* maps (from qMRI), PDw echoes (for reference)  
+**Input:** R2/T2 maps (from T2 processing), R2* maps (from qMRI), PDw echoes (reference), MESE echoes (moving)  
 **Output:** R2' maps (R2' = R2* - R2)
 
 **Processing Steps:**
 1. Reference Image Creation (PDw echo summation)
-2. R2 Slab Coregistration to PDw space
-3. R2' Calculation with validation
+2. Reference denoise + N4 and MESE echo summation + denoise + N4
+3. R2/T2 slab coregistration to PDw space
+4. R2' Calculation with validation
 
 ---
 
@@ -203,7 +204,7 @@ For 3T data, create manual noise masks:
 #### Basic Syntax
 
 ```bash
-./r2prime_calculation/r2prime_creation_main.sh -cont <container> -pdw <pdw_dir> -r2 <r2_dir> -r2s <r2s_dir> -o <output_dir>
+./r2prime_calculation/r2prime_creation_main.sh -cont <container> -pdw <pdw_dir> -r2 <r2_dir> -r2s <r2s_dir> -mese <mese_dir> -o <output_dir>
 ```
 
 #### Required Arguments
@@ -214,6 +215,7 @@ For 3T data, create manual noise masks:
 | `-pdw DIR` | Directory with PDw echoes (denoised, GNLC-corrected) |
 | `-r2 DIR` | Directory with R2 maps (from T2 processing) |
 | `-r2s DIR` | Directory with R2* maps (from qMRI) |
+| `-mese DIR` | Directory with MESE echoes (used for moving image) |
 | `-o DIR` | Output directory for R2' maps |
 
 #### Key Optional Arguments
@@ -222,7 +224,8 @@ For 3T data, create manual noise masks:
 |------|-------------|---------|
 | `-sub SUBJECTS` | Comma-separated subject list | All subjects |
 | `-ses SESSIONS` | Comma-separated session list (requires `-sub`) | All sessions |
-| `-fp PATTERN` | Filename pattern for PDw echoes | `*acq-PDw*echo-*part-mag*.nii` |
+| `-fp-pdw PATTERN` | Filename pattern for PDw echoes | `*acq-PDw*echo-*part-mag*.nii` |
+| `-fp-mese PATTERN` | Filename pattern for MESE echoes | `*MESE*.nii*` |
 | `-pw` | Preserve working directories | Cleanup enabled |
 
 > For all options, see: `./r2prime_calculation/r2prime_creation_main.sh --help` or [full documentation](docs/doc_r2prime_calculation.md#command-line-options)
@@ -236,6 +239,7 @@ For 3T data, create manual noise masks:
   -pdw /data/derivatives/LCPCA_distCorr \
   -r2 /data/derivatives/relax_R2 \
   -r2s /data/derivatives/qMRI_noB1corr \
+  -mese /data/derivatives/mese_echoes \
   -o /data/derivatives/r2prime/b7T
 ```
 
@@ -248,6 +252,7 @@ For 3T data, create manual noise masks:
   -pdw /data/derivatives/LCPCA_distCorr \
   -r2 /data/derivatives/relax_R2 \
   -r2s /data/derivatives/qMRI_noB1corr \
+  -mese /data/derivatives/mese_echoes \
   -o /data/derivatives/r2prime/b3T
 ```
 
@@ -273,6 +278,7 @@ For 3T data, create manual noise masks:
   -pdw /data/derivatives/LCPCA_distCorr \
   -r2 /data/derivatives/relax_R2 \
   -r2s /data/derivatives/qMRI_noB1corr \
+  -mese /data/derivatives/mese_echoes \
   -o /data/derivatives/r2prime/b7T
 ```
 
@@ -299,6 +305,7 @@ For 3T data, create manual noise masks:
   -pdw /data/derivatives/LCPCA_distCorr \
   -r2 /data/derivatives/relax_R2 \
   -r2s /data/derivatives/qMRI_noB1corr \
+  -mese /data/derivatives/mese_echoes \
   -o /data/derivatives/r2prime/b3T
 ```
 

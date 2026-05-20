@@ -8,13 +8,14 @@ echo \
 $(basename $0): Automatically finds and submits SLURM jobs for R2' (R2prime) creation pipeline on all anat directories within a BIDS-like structure.
 
 USAGE:
-    $(basename $0) [options] -cont <container_path> -pdw <pdw_dir> -r2 <r2_dir> -r2s <r2s_dir> -o <output_dir>
+    $(basename $0) [options] -cont <container_path> -pdw <pdw_dir> -r2 <r2_dir> -r2s <r2s_dir> -mese <mese_dir> -o <output_dir>
 
 MANDATORY OPTIONS:
     -cont PATH | --container PATH: Path to Singularity container with FSL and coregistration tools
     -pdw DIR | --pdw-dir DIR: Reference directory containing BIDS-structured PDw echo data
     -r2 DIR | --r2-dir DIR: Input directory containing BIDS-structured R2 slab data
     -r2s DIR | --r2s-dir DIR: Directory containing BIDS-structured R2* map data
+    -mese DIR | --mese-dir DIR: Directory containing BIDS-structured MESE echoes used for R2/T2 maps
     -o DIR | --output-dir DIR: Output directory for R2' maps
 
 OPTIONAL OPTIONS:
@@ -24,29 +25,31 @@ OPTIONAL OPTIONS:
     -ses SESSIONS | --sessions SESSIONS: comma-separated list (no spaces!) of sessions to process (e.g., ses-01,ses-02)
                                         Note: -ses requires -sub to be specified
     -w DIR | --work-dir DIR: working directory for intermediate files (default: output_dir/Supplementary)
-    -fp PATTERN | --fname-pattern PATTERN: filename pattern for echo files (default: \"*acq-PDw*echo-*part-mag*.nii\")
+    -fp-pdw PATTERN | --fname-pattern PATTERN: filename pattern for PDw echo files (default: \"*acq-PDw*echo-*part-mag*.nii\")
+    -fp-mese PATTERN | --fname-pattern-mese PATTERN: filename pattern for MESE echoes (default: \"*MESE*.nii*\")
     -pw | --preserve-workdir: preserve working directories after processing (default: working directories are deleted)
     --dry-run: show commands that would be executed without actually submitting jobs
 
 DESCRIPTION:
     The script searches for directories matching the pattern: r2_dir/sub-*/ses-*/anat/ (for R2 slabs),
-    pdw_dir/sub-*/ses-*/anat/ (for PDw echoes), and r2s_dir/sub-*/ses-*/anat/ (for R2* maps) and submits 
-    a series of SLURM jobs for R2 slab coregistration and R2' calculation in each matching 
-    directory triplet found.
+    pdw_dir/sub-*/ses-*/anat/ (for PDw echoes), r2s_dir/sub-*/ses-*/anat/ (for R2* maps), and
+    mese_dir/sub-*/ses-*/anat/ (for MESE echoes) and submits a series of SLURM jobs
+    for R2/T2 slab coregistration and R2' calculation in each matching directory quartet found.
     
     Processing pipeline:
     1. Reference image creation (sum of PDw echoes)
-    2. R2 slab coregistration to reference image  
-    3. R2' calculation (R2* - R2)
-    4. Session cleanup (removes intermediate files for each session)
-    5. Final cleanup (removes remaining temporary directory structure)
+    2. Reference denoise + N4 bias correction and MESE echo summation + denoise + N4
+    3. R2/T2 slab coregistration to reference image
+    4. R2' calculation (R2* - R2)
+    5. Session cleanup (removes intermediate files for each session)
+    6. Final cleanup (removes remaining temporary directory structure)
     
     By default, intermediate files and working directories are automatically cleaned up
     after successful processing. Use --preserve-workdir to keep all intermediate files.
 
     If -sub is specified, the script processes only the specified subjects. If -ses is also specified,
     it only processes the specified sessions for those subjects. Without these flags, it processes
-    all subjects and sessions that are present in all three input directories.
+    all subjects and sessions that are present in all four input directories.
 
     The jobs for each session run sequentially with dependencies.
     
@@ -56,12 +59,12 @@ DESCRIPTION:
     the imaging data, containing comprehensive processing metadata including input file names, software versions, and technical parameters for reproducibility.
 
 EXAMPLES:
-    $(basename $0) -cont /path/to/container.sif -pdw /data/pdw_echoes -r2 /data/r2_slabs -r2s /data/qMRI -o /data/output
-    $(basename $0) -sub \"sub-001,sub-002\" -cont /path/to/container.sif -pdw /data/pdw_echoes -r2 /data/r2_slabs -r2s /data/qMRI -o /data/output
-    $(basename $0) -sub \"sub-001\" -ses \"ses-01,ses-02\" -cont /path/to/container.sif -pdw /data/pdw_echoes -r2 /data/r2_slabs -r2s /data/qMRI -o /data/output
-    $(basename $0) -w /scratch/temp --fname-pattern \"*PDw*echo*.nii\" -cont /path/to/container.sif -pdw /data/pdw_echoes -r2 /data/r2_slabs -r2s /data/qMRI -o /data/output
-    $(basename $0) -pw -cont /path/to/container.sif -pdw /data/pdw_echoes -r2 /data/r2_slabs -r2s /data/qMRI -o /data/output
-    $(basename $0) --dry-run -t 5 -cont /path/to/container.sif -pdw /data/pdw_echoes -r2 /data/r2_slabs -r2s /data/qMRI -o /data/output
+    $(basename $0) -cont /path/to/container.sif -pdw /data/pdw_echoes -r2 /data/r2_slabs -r2s /data/qMRI -mese /data/mese_echoes -o /data/output
+    $(basename $0) -sub "sub-001,sub-002" -cont /path/to/container.sif -pdw /data/pdw_echoes -r2 /data/r2_slabs -r2s /data/qMRI -mese /data/mese_echoes -o /data/output
+    $(basename $0) -sub "sub-001" -ses "ses-01,ses-02" -cont /path/to/container.sif -pdw /data/pdw_echoes -r2 /data/r2_slabs -r2s /data/qMRI -mese /data/mese_echoes -o /data/output
+    $(basename $0) -w /scratch/temp -fp-pdw "*PDw*echo*.nii" --fname-pattern-mese "*MESE*.nii*" -cont /path/to/container.sif -pdw /data/pdw_echoes -r2 /data/r2_slabs -r2s /data/qMRI -mese /data/mese_echoes -o /data/output
+    $(basename $0) -pw -cont /path/to/container.sif -pdw /data/pdw_echoes -r2 /data/r2_slabs -r2s /data/qMRI -mese /data/mese_echoes -o /data/output
+    $(basename $0) --dry-run -t 5 -cont /path/to/container.sif -pdw /data/pdw_echoes -r2 /data/r2_slabs -r2s /data/qMRI -mese /data/mese_echoes -o /data/output
 
 AUTHOR:
     Niklas Kuegler (kuegler@cbs.mpg.de)
@@ -76,12 +79,15 @@ container_path=""
 pdw_dir=""
 r2_dir=""
 r2s_dir=""
+mese_dir=""
 output_dir=""
 work_dir=""
 subjects=""
 sessions=""
 fname_pattern="*acq-PDw*echo-*part-mag*.nii"
-fname_ref_echoSum="PDw_echoes_sum.nii" 
+mese_fname_pattern="*MESE*.nii*"
+pdw_echoes_sum_base="PDw_echoes_sum.nii"
+mese_echoes_sum_base="MESE_echoes_sum.nii"
 logs_dir="/data/u_kuegler_software/git/r2_processing/logs/r2prime_calc"
 
 # Parse command line arguments
@@ -107,6 +113,10 @@ while [[ $# -gt 0 ]]; do
             r2s_dir="$2"
             shift 2
             ;;
+        -mese|--mese-dir)
+            mese_dir="$2"
+            shift 2
+            ;;
         -o|--output-dir)
             output_dir="$2"
             shift 2
@@ -127,8 +137,12 @@ while [[ $# -gt 0 ]]; do
             work_dir="$2"
             shift 2
             ;;
-        -fp|--fname-pattern)
+        -fp-pdw|--fname-pattern)
             fname_pattern="$2"
+            shift 2
+            ;;
+        -fp-mese|--fname-pattern-mese)
+            mese_fname_pattern="$2"
             shift 2
             ;;
         -pw|--preserve-workdir)
@@ -178,6 +192,12 @@ if [[ -z "$r2s_dir" ]]; then
     exit 1
 fi
 
+if [[ -z "$mese_dir" ]]; then
+    echo "Error: MESE directory must be specified with -mese or --mese-dir"
+    usage
+    exit 1
+fi
+
 if [[ -z "$output_dir" ]]; then
     echo "Error: Output directory must be specified with -o or --output-dir"
     usage
@@ -199,6 +219,11 @@ if [[ ! -d "$r2s_dir" ]]; then
     exit 1
 fi
 
+if [[ ! -d "$mese_dir" ]]; then
+    echo "Error: MESE directory does not exist: $mese_dir"
+    exit 1
+fi
+
 if [[ ! -f "$container_path" ]]; then
     echo "Error: Container file does not exist: $container_path"
     exit 1
@@ -208,6 +233,7 @@ fi
 [[ "$pdw_dir" != */ ]] && pdw_dir="${pdw_dir}/"
 [[ "$r2_dir" != */ ]] && r2_dir="${r2_dir}/"
 [[ "$r2s_dir" != */ ]] && r2s_dir="${r2s_dir}/"
+[[ "$mese_dir" != */ ]] && mese_dir="${mese_dir}/"
 [[ "$output_dir" != */ ]] && output_dir="${output_dir}/"
 [[ -n "$work_dir" && "$work_dir" != */ ]] && work_dir="${work_dir}/"
 
@@ -251,6 +277,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Define paths to SLURM scripts
 ref_sum_script="$script_dir/ref_sum_echoes.sh"
 coreg_script="$script_dir/coreg_r2_slab_slurm.sh"
+denoise_script="$script_dir/denoise_n4_ref_mese.sh"
 r2prime_script="$script_dir/r2prime_calc.sh"
 session_cleanup_script="$script_dir/../slurm_cleanup_session.sh"
 final_cleanup_script="$script_dir/../slurm_cleanup_final.sh"
@@ -263,6 +290,11 @@ fi
 
 if [[ ! -f "$coreg_script" ]]; then
     echo "Error: Coregistration SLURM script not found at $coreg_script"
+    exit 1
+fi
+
+if [[ ! -f "$denoise_script" ]]; then
+    echo "Error: Denoise/N4 SLURM script not found at $denoise_script"
     exit 1
 fi
 
@@ -286,6 +318,7 @@ echo "Searching for anat directories in:"
 echo "  R2 data directory: $r2_dir"
 echo "  PDw data directory: $pdw_dir"
 echo "  R2* data directory: $r2s_dir"
+echo "  MESE data directory: $mese_dir"
 if [[ ${#subject_array[@]} -gt 0 ]]; then
     echo "Filtering for subjects: ${subject_array[*]}"
     if [[ ${#session_array[@]} -gt 0 ]]; then
@@ -296,16 +329,17 @@ fi
 anat_dirs=()
 
 if [[ ${#subject_array[@]} -eq 0 ]]; then
-    # No subject filter - find all anat directories that exist in r2_dir, pdw_dir, and r2s_dir
+    # No subject filter - find all anat directories that exist in r2_dir, pdw_dir, r2s_dir, and mese_dir
     while IFS= read -r -d '' anat_dir; do
         # Extract subject/session from r2_dir path
         if [[ $anat_dir =~ .*(sub-[^/]+)/(ses-[^/]+)/anat.* ]]; then
             subject="${BASH_REMATCH[1]}"
             session="${BASH_REMATCH[2]}"
-            # Check if corresponding directories exist in pdw_dir and r2s_dir
+            # Check if corresponding directories exist in pdw_dir, r2s_dir, and mese_dir
             pdw_anat_path="$pdw_dir/$subject/$session/anat"
             r2s_anat_path="$r2s_dir/$subject/$session/anat"
-            if [[ -d "$pdw_anat_path" && -d "$r2s_anat_path" ]]; then
+            mese_anat_path="$mese_dir/$subject/$session/anat"
+            if [[ -d "$pdw_anat_path" && -d "$r2s_anat_path" && -d "$mese_anat_path" ]]; then
                 anat_dirs+=("$anat_dir")
             fi
         fi
@@ -316,13 +350,14 @@ else
         if [[ ${#session_array[@]} -eq 0 ]]; then
             # Process all sessions for this subject
             while IFS= read -r -d '' anat_dir; do
-                # Check if corresponding directories exist in pdw_dir and r2s_dir
+                # Check if corresponding directories exist in pdw_dir, r2s_dir, and mese_dir
                 if [[ $anat_dir =~ .*(sub-[^/]+)/(ses-[^/]+)/anat.* ]]; then
                     subject_match="${BASH_REMATCH[1]}"
                     session_match="${BASH_REMATCH[2]}"
                     pdw_anat_path="$pdw_dir/$subject_match/$session_match/anat"
                     r2s_anat_path="$r2s_dir/$subject_match/$session_match/anat"
-                    if [[ -d "$pdw_anat_path" && -d "$r2s_anat_path" ]]; then
+                    mese_anat_path="$mese_dir/$subject_match/$session_match/anat"
+                    if [[ -d "$pdw_anat_path" && -d "$r2s_anat_path" && -d "$mese_anat_path" ]]; then
                         anat_dirs+=("$anat_dir")
                     fi
                 fi
@@ -333,7 +368,8 @@ else
                 anat_path="$r2_dir/$subject/$session/anat"
                 pdw_anat_path="$pdw_dir/$subject/$session/anat"
                 r2s_anat_path="$r2s_dir/$subject/$session/anat"
-                if [[ -d "$anat_path" && -d "$pdw_anat_path" && -d "$r2s_anat_path" ]]; then
+                mese_anat_path="$mese_dir/$subject/$session/anat"
+                if [[ -d "$anat_path" && -d "$pdw_anat_path" && -d "$r2s_anat_path" && -d "$mese_anat_path" ]]; then
                     anat_dirs+=("$anat_path")
                 fi
             done
@@ -343,27 +379,29 @@ fi
 
 if [[ ${#anat_dirs[@]} -eq 0 ]]; then
     if [[ ${#subject_array[@]} -gt 0 ]]; then
-        echo "Error: No matching anat directory triplets found for specified subjects/sessions"
+        echo "Error: No matching anat directory quartets found for specified subjects/sessions"
         echo "Subjects: ${subject_array[*]}"
         if [[ ${#session_array[@]} -gt 0 ]]; then
             echo "Sessions: ${session_array[*]}"
         fi
     else
-        echo "Error: No matching anat directory triplets found"
-        echo "Pattern: */sub-*/ses-*/anat in r2_dir, pdw_dir, and r2s_dir"
+        echo "Error: No matching anat directory quartets found"
+        echo "Pattern: */sub-*/ses-*/anat in r2_dir, pdw_dir, r2s_dir, and mese_dir"
     fi
-    echo "Please check that all three directories contain the expected BIDS-like structure"
+    echo "Please check that all four directories contain the expected BIDS-like structure"
     exit 1
 fi
 
-echo "Found ${#anat_dirs[@]} matching anat directory triplets to process"
+echo "Found ${#anat_dirs[@]} matching anat directory quartets to process"
 echo "Processing parameters:"
 echo "  Container: $container_path"
 echo "  PDw directory: $pdw_dir"
 echo "  R2 directory: $r2_dir"
 echo "  R2* directory: $r2s_dir"
+echo "  MESE directory: $mese_dir"
 echo "  Output directory: $output_dir"
-echo "  Filename pattern: $fname_pattern"
+echo "  PDw filename pattern: $fname_pattern"
+echo "  MESE filename pattern: $mese_fname_pattern"
 if [[ -n "$work_dir" ]]; then
     echo "  Working directory: $work_dir"
 else
@@ -411,6 +449,7 @@ skipped_sessions=0
 
 # Arrays to track job IDs for dependencies
 declare -A ref_sum_job_ids
+declare -A denoise_job_ids
 declare -A coreg_job_ids
 declare -A r2prime_job_ids
 
@@ -420,6 +459,7 @@ session_cleanup_job_ids=()
 r2_suffix="R2map"
 r2s_suffix="R2starmap"
 r2p_suffix="R2primemap"
+t2_suffix="T2map"
 
 
 # Cycle through each anat directory and submit SLURM jobs
@@ -446,9 +486,15 @@ for anat_path in "${anat_dirs[@]}"; do
         
         # Create unique session identifier
         session_id="${subject}_${session}"
+
+        pdw_echoes_sum_name="${subject}_${session}_${pdw_echoes_sum_base}"
+        pdw_echoes_sum_n4_name="${subject}_${session}_${pdw_echoes_sum_base%.nii}_n4.nii"
+        mese_echoes_sum_name="${subject}_${session}_${mese_echoes_sum_base}"
+        mese_echoes_sum_n4_name="${subject}_${session}_${mese_echoes_sum_base%.nii}_n4.nii"
         
-        # Get corresponding reference directory for PDw echoes
+        # Get corresponding directories for PDw and MESE echoes
         pdw_anat_path="$pdw_dir/$subject/$session/anat"
+        mese_anat_path="$mese_dir/$subject/$session/anat"
         
         echo "  Subject: $subject, Session: $session"
         # echo "  R2 slab directory: $anat_path"
@@ -461,7 +507,7 @@ for anat_path in "${anat_dirs[@]}"; do
         # ================================================================
         echo "  Submitting reference image creation job..."
 
-        ref_sum_cmd="sbatch -p short,group_servers,gr_weiskopf --output=\"$logs_dir/%j_createRef_${subject}_${session}.out\" \"$ref_sum_script\" \"$container_path\" \"$pdw_anat_path\" \"$target_working_dir\" \"$fname_pattern\" \"${fname_ref_echoSum}.gz\""
+        ref_sum_cmd="sbatch -p short,group_servers,gr_weiskopf --output=\"$logs_dir/%j_createRef_${subject}_${session}.out\" \"$ref_sum_script\" \"$container_path\" \"$pdw_anat_path\" \"$target_working_dir\" \"$fname_pattern\" \"${pdw_echoes_sum_name}.gz\""
 
         if [[ "$dry_run" == "false" ]]; then
             # echo "    Command: $ref_sum_cmd"
@@ -484,29 +530,83 @@ for anat_path in "${anat_dirs[@]}"; do
         fi
         
         # ================================================================
-        # JOB 2: R2 SLAB COREGISTRATION
+        # JOB 2: REFERENCE DENOISE + N4 AND MESE ECHO SUMMATION + DENOISE + N4
         # ================================================================
-        echo "  Submitting R2 slab coregistration job..."
-        
+        echo "  Submitting reference + MESE denoise + N4 correction job..."
+
         # Get dependency on reference image creation job
         ref_sum_job_id="${ref_sum_job_ids[$session_id]}"
 
-        coreg_moving_img="$anat_path/${subject}_${session}_R2map.nii"
-        coreg_ref_img="$target_working_dir/$fname_ref_echoSum"
-
-        # does not run in custom container for now
-        # coregistered R2 is saved directly into the R2 input directory (anat_path)
-        coreg_cmd="sbatch -p short,group_servers,gr_weiskopf --dependency=afterok:$ref_sum_job_id --output=\"$logs_dir/%j_coregR2_${subject}_${session}.out\" \"$coreg_script\" \"$coreg_moving_img\" \"$coreg_ref_img\" \"$anat_path\""
+        denoise_ref_img="$target_working_dir/$pdw_echoes_sum_name"
+        denoise_cmd="sbatch -p short,group_servers,gr_weiskopf --dependency=afterok:$ref_sum_job_id --output=\"$logs_dir/%j_denoiseN4_${subject}_${session}.out\" \"$denoise_script\" \"$container_path\" \"$denoise_ref_img\" \"$mese_anat_path\" \"$target_working_dir\" \"$mese_fname_pattern\" \"${mese_echoes_sum_name}.gz\""
         
         if [[ "$dry_run" == "false" ]]; then
-
-            # Check if coregistration input files exist
-            if [[ ! -f "$coreg_moving_img" ]]; then
-                echo "    Error: Moving image not found: $coreg_moving_img"
+            # Check if MESE directory exists
+            if [[ ! -d "$mese_anat_path" ]]; then
+                echo "    Error: MESE directory not found: $mese_anat_path"
                 ((skipped_sessions++))
                 ((job_counter++))
                 scancel "$ref_sum_job_id"
                 echo "    Reference image creation job cancelled"
+                continue
+            fi
+
+            # echo "    Command: $denoise_cmd"
+            denoise_out=$(eval $denoise_cmd)
+            # echo "    $denoise_out"
+
+            if [[ $denoise_out =~ Submitted\ batch\ job\ ([0-9]+) ]]; then
+                denoise_job_id="${BASH_REMATCH[1]}"
+                echo "    Denoise + N4 job ID: $denoise_job_id (depends on job: $ref_sum_job_id)"
+                denoise_job_ids[$session_id]="$denoise_job_id"
+            else
+                echo "    Error: Could not extract denoise job ID"
+                ((skipped_sessions++))
+                ((job_counter++))
+                continue
+            fi
+        else
+            echo "    DRY RUN: $denoise_cmd"
+            denoise_job_ids[$session_id]="DRY_RUN_DENOISE_JOB_ID"
+        fi
+
+        # ================================================================
+        # JOB 3: R2 SLAB COREGISTRATION
+        # ================================================================
+        echo "  Submitting R2 slab coregistration job..."
+
+        # Get dependency on denoise job
+        denoise_job_id="${denoise_job_ids[$session_id]}"
+
+        moving_img="$target_working_dir/$mese_echoes_sum_n4_name"
+        ref_img="$target_working_dir/$pdw_echoes_sum_n4_name"
+        r2_img="$anat_path/${subject}_${session}_${r2_suffix}.nii"
+        t2_img="$anat_path/${subject}_${session}_${t2_suffix}.nii"
+
+        # does not run in custom container for now
+        # coregistered R2 is saved directly into the R2 input directory (anat_path)
+        coreg_cmd="sbatch -p short,group_servers,gr_weiskopf --dependency=afterok:$denoise_job_id --output=\"$logs_dir/%j_coregR2_${subject}_${session}.out\" \"$coreg_script\" \"$moving_img\" \"$ref_img\" \"$target_working_dir\" \"$t2_img\" \"$r2_img\""
+
+        if [[ "$dry_run" == "false" ]]; then
+
+            # Check if coregistration input files exist
+            if [[ ! -f "$r2_img" ]]; then
+                echo "    Error: R2 map not found: $r2_img"
+                ((skipped_sessions++))
+                ((job_counter++))
+                scancel "$ref_sum_job_id"
+                scancel "$denoise_job_id"
+                echo "    Reference image creation and denoise jobs cancelled"
+                continue
+            fi
+
+            if [[ ! -f "$t2_img" ]]; then
+                echo "    Error: T2 map not found: $t2_img"
+                ((skipped_sessions++))
+                ((job_counter++))
+                scancel "$ref_sum_job_id"
+                scancel "$denoise_job_id"
+                echo "    Reference image creation and denoise jobs cancelled"
                 continue
             fi
 
@@ -516,7 +616,7 @@ for anat_path in "${anat_dirs[@]}"; do
             
             if [[ $coreg_out =~ Submitted\ batch\ job\ ([0-9]+) ]]; then
                 coreg_job_id="${BASH_REMATCH[1]}"
-                echo "    R2 slab coregistration job ID: $coreg_job_id (depends on job: $ref_sum_job_id)"
+                echo "    R2 slab coregistration job ID: $coreg_job_id (depends on job: $denoise_job_id)"
                 coreg_job_ids[$session_id]="$coreg_job_id"
             else
                 echo "    Error: Could not extract coregistration job ID"
@@ -530,7 +630,7 @@ for anat_path in "${anat_dirs[@]}"; do
         fi
         
         # ================================================================
-        # JOB 3: R2 PRIME CALCULATION
+        # JOB 4: R2 PRIME CALCULATION
         # ================================================================
         echo "  Submitting R2' calculation job..."
         
@@ -538,7 +638,7 @@ for anat_path in "${anat_dirs[@]}"; do
         coreg_job_id="${coreg_job_ids[$session_id]}"
 
         # Construct paths for R2' calculation
-        r2_map="$anat_path/coreg_${subject}_${session}_${r2_suffix}.nii"
+        r2_map="$target_working_dir/coreg_${subject}_${session}_${r2_suffix}.nii"
         r2star_map="$r2s_dir/$subject/$session/anat/${subject}_${session}_${r2s_suffix}.nii"
         fname_r2prime="${subject}_${session}_${r2p_suffix}.nii.gz" # only filename, no path
 
@@ -576,7 +676,7 @@ for anat_path in "${anat_dirs[@]}"; do
         fi
 
         # ================================================================
-        # JOB 4: SESSION CLEANUP (if delete_workdir is enabled)
+        # JOB 5: SESSION CLEANUP (if delete_workdir is enabled)
         # ================================================================
         if [[ "$delete_workdir" == "true" ]]; then
             echo "  Submitting session cleanup job..."
@@ -669,10 +769,11 @@ echo "Sessions skipped: $skipped_sessions"
 echo "Sessions processed: $((total_sessions - skipped_sessions))"
 echo "Processing pipeline per session:"
 echo "  1. Reference image creation (PDw echo summation)"
-echo "  2. R2 slab coregistration to reference image"
-echo "  3. R2' calculation (R2* - R2)"
+echo "  2. Reference denoise + N4 and MESE echo summation + denoise + N4"
+echo "  3. R2/T2 slab coregistration to reference image"
+echo "  4. R2' calculation (R2* - R2)"
 if [[ "$delete_workdir" == "true" ]]; then
-    echo "  4. Session cleanup → 5. Final cleanup (after all sessions)"
+    echo "  5. Session cleanup → 6. Final cleanup (after all sessions)"
     echo "Working directory cleanup: ENABLED (default)"
 else
     echo "Working directory cleanup: DISABLED (--preserve-workdir specified)"

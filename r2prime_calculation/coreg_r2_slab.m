@@ -1,4 +1,4 @@
-function coreg_r2_slab(moving, reference)
+function coreg_r2_slab(moving, reference, other)
 
     %% CO-REGISTRATION BATCH CREATION
     % Creates an SPM batch structure for co-registration of functional/structural images
@@ -12,6 +12,8 @@ function coreg_r2_slab(moving, reference)
     %               image file that will be co-registered (moved to align with reference)
     %   reference - String or char array specifying the full path to the reference 
     %               image file that serves as the target for alignment
+    %   other     - (Optional) String or char array specifying the full path to an
+    %               additional image that should receive the same transform
     %
     % OUTPUTS:
     %   None - The function creates a matlab batch and runs it. The output of the 
@@ -19,7 +21,7 @@ function coreg_r2_slab(moving, reference)
     %          with a prefix 'coreg_'.
     %
     % EXAMPLE:
-    %   coreg_r2_slab('/path/to/moving.nii', '/path/to/reference.nii');
+    %   coreg_r2_slab('/path/to/moving.nii', '/path/to/reference.nii', '/path/to/other.nii');
     %
     % NOTE:
     %   - Adds SPM12 to the MATLAB path
@@ -40,9 +42,19 @@ function coreg_r2_slab(moving, reference)
     clear matlabbatch
     spm_jobman('initcfg') ;
 
+    if nargin < 3
+        other = '';
+    end
+
     matlabbatch{1}.spm.spatial.coreg.estwrite.ref = cellstr(reference);
     matlabbatch{1}.spm.spatial.coreg.estwrite.source = cellstr(moving);
-    matlabbatch{1}.spm.spatial.coreg.estwrite.other = {''};
+    if isempty(other)
+        matlabbatch{1}.spm.spatial.coreg.estwrite.other = {''};
+    elseif iscell(other)
+        matlabbatch{1}.spm.spatial.coreg.estwrite.other = other;
+    else
+        matlabbatch{1}.spm.spatial.coreg.estwrite.other = cellstr(other);
+    end
     matlabbatch{1}.spm.spatial.coreg.estwrite.eoptions.cost_fun = 'nmi';
     matlabbatch{1}.spm.spatial.coreg.estwrite.eoptions.sep = [4 2 1 0.6];
     matlabbatch{1}.spm.spatial.coreg.estwrite.eoptions.tol = [0.02 0.02 0.02 0.001 0.001 0.001 0.01 0.01 0.01 0.001 0.001 0.001];

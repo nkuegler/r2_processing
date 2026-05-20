@@ -23,9 +23,10 @@ The scripts that are described on this page are part of the **r2_processing** re
    - [Examples](#examples)
 5. [Processing Details](#processing-details)
    - [Stage 1: Reference Image Creation](#stage-1-reference-image-creation)
-   - [Stage 2: R2 Slab Coregistration](#stage-2-r2-slab-coregistration)
-   - [Stage 3: R2' Calculation](#stage-3-r2-calculation)
-   - [Stage 4: Cleanup](#stage-4-cleanup)
+   - [Stage 2: Reference + MESE Preprocessing](#stage-2-reference--mese-preprocessing)
+   - [Stage 3: R2/T2 Slab Coregistration](#stage-3-r2t2-slab-coregistration)
+   - [Stage 4: R2' Calculation](#stage-4-r2-calculation)
+   - [Stage 5: Cleanup](#stage-5-cleanup)
 6. [Output Structure](#output-structure)
 7. [File Description](#file-description)
 8. [Quality Control](#quality-control)
@@ -38,12 +39,13 @@ The scripts that are described on this page are part of the **r2_processing** re
 
 The R2' calculation pipeline performs the following operations:
 
-1. **Reference Image Creation** - Sums all PDw (Proton Density weighted) echoes to create a high-SNR reference image 
+1. **Reference Image Creation** - Sums all PDw (Proton Density weighted) echoes to create a high-SNR reference image
    - all qMRI maps are present in the PDw space
    - PDw echoes should be denoised and gradient nonlinearity corrected
-2. **R2 Slab Coregistration** - Aligns R2 maps (from T2 processing) to the PDw reference space using SPM12 (*Estimate and Reslice*); the coregistered R2 map and its JSON sidecar are saved directly into the R2 input directory
-3. **R2' Calculation** - Computes `R2' = R2* - R2` with appropriate masking and validation
-4. **Cleanup** - Removes intermediate working directories (optional)
+2. **Reference + MESE Preprocessing** - Denoise + N4 bias correction for the PDw reference, and MESE echo summation + denoise + N4 for the moving image
+3. **R2/T2 Slab Coregistration** - Aligns MESE sum to the PDw reference using SPM12 (*Estimate and Reslice*), then applies the transform to the R2 and T2 maps; coregistered outputs are saved directly into the R2 input directory
+4. **R2' Calculation** - Computes `R2' = R2* - R2` with appropriate masking and validation
+5. **Cleanup** - Removes intermediate working directories (optional)
 
 The pipeline is designed to work with BIDS-structured derivatives from:
 - **T2 processing pipeline** (provides R2 maps)
@@ -70,7 +72,7 @@ Aside from MATLAB-based software (SPM12 and MATLAB), the provided singularity co
 
 ### Data Requirements
 
-The pipeline requires three BIDS-structured input directories (PDw, R2*, R2), each containing the same subjects/sessions:
+The pipeline requires four BIDS-structured input directories (PDw, R2*, R2, MESE), each containing the same subjects/sessions:
 
 1. **PDw Directory** - Proton density weighted echo data
    ```
@@ -101,7 +103,16 @@ The pipeline requires three BIDS-structured input directories (PDw, R2*, R2), ea
    │           └── *_R2starmap.nii
    ```
 
-**Important:** Each subject/session must be present in **all three directories** for processing to proceed.
+4. __MESE Directory__ - MESE echoes (moving image for coregistration)
+   ```
+   mese_dir/
+   ├── sub-XXX/
+   │   └── ses-YY/
+   │       └── anat/
+   │           └── *_MESE*.nii[.gz]
+   ```
+
+**Important:** Each subject/session must be present in **all four directories** for processing to proceed.
 
 
 ### Container Requirements
@@ -117,7 +128,7 @@ A Singularity container with FSL tools is required. The container path must be s
 
 ### Pipeline Stages
 
-The pipeline consists of four main stages, executed sequentially for each subject/session:
+The pipeline consists of five main stages, executed sequentially for each subject/session:
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -128,16 +139,24 @@ The pipeline consists of four main stages, executed sequentially for each subjec
                            │
                            ↓
 ┌──────────────────────────────────────────────────────────────┐
-│ Stage 2: R2 Slab Coregistration                              │
-│ - Align R2 map to PDw reference space using SPM12            │
-│ - Rigid body transformation (6 DOF)                          │
-│ - 4th degree B-spline interpolation                          │
-│ - Coregistered output saved to R2 input directory            │
+│ Stage 2: Reference + MESE Preprocessing                      │
+│ - Denoise + N4 correction of PDw reference                   │
+│ - MESE echo summation + denoise + N4                         │
 └──────────────────────────┬───────────────────────────────────┘
                            │
                            ↓
 ┌──────────────────────────────────────────────────────────────┐
-│ Stage 3: R2' Calculation                                     │
+│ Stage 3: R2/T2 Slab Coregistration                            │
+│ - Align MESE sum to PDw reference using SPM12                 │
+│ - Rigid body transformation (6 DOF)                          │
+│ - 4th degree B-spline interpolation                          │
+│ - Transform applied to R2 and T2 maps                         │
+│ - Coregistered outputs saved to R2 input directory            │
+└──────────────────────────┬───────────────────────────────────┘
+                           │
+                           ↓
+┌──────────────────────────────────────────────────────────────┐
+│ Stage 4: R2' Calculation                                     │
 │ - Validate sform matrix alignment between R2* and R2         │
 │ - Calculate R2' = R2* - R2                                   │
 │ - Apply masking and thresholding                             │
@@ -145,7 +164,7 @@ The pipeline consists of four main stages, executed sequentially for each subjec
                            │
                            ↓
 ┌──────────────────────────────────────────────────────────────┐
-│ Stage 4: Cleanup (optional, default: enabled)                │
+│ Stage 5: Cleanup (optional, default: enabled)                │
 │ - Session cleanup (per-session working directories)          │
 │ - Final cleanup (entire working directory structure)         │
 └──────────────────────────────────────────────────────────────┘
@@ -154,21 +173,26 @@ The pipeline consists of four main stages, executed sequentially for each subjec
 ### Data Flow
 
 ```
-Input Data (Three BIDS Directories)
+Input Data (Four BIDS Directories)
     │
     ├── PDw echoes (pdw_dir/sub-*/ses-*/anat/)
     ├── R2 maps (r2_dir/sub-*/ses-*/anat/)
-    └── R2* maps (r2s_dir/sub-*/ses-*/anat/)
+   ├── R2* maps (r2s_dir/sub-*/ses-*/anat/)
+   └── MESE echoes (mese_dir/sub-*/ses-*/anat/)
     │
     ↓
-Reference Image (working_dir/)
+Reference + MESE Preprocessing (working_dir/)
     │
-    └── PDw_echoes_sum.nii (sum of all PDw echoes)
+   ├── sub-XXX_ses-YY_PDw_echoes_sum.nii (sum of all PDw echoes)
+   ├── sub-XXX_ses-YY_PDw_echoes_sum_n4.nii
+   ├── sub-XXX_ses-YY_MESE_echoes_sum.nii (sum of all MESE echoes)
+   └── sub-XXX_ses-YY_MESE_echoes_sum_n4.nii
     │
     ↓
-Coregistered R2 (r2_dir/)
+Coregistered R2/T2 (r2_dir/)
     │
-    └── coreg_*_R2map.nii (R2 aligned to PDw space)
+   ├── coreg_*_R2map.nii (R2 aligned to PDw space)
+   └── coreg_*_T2map.nii (T2 aligned to PDw space)
     │
     ↓
 Final R2' Output (output_dir/)
@@ -188,9 +212,11 @@ Session Processing:
 
 Reference Creation Job (Job ID: 12345)
     │
-    └──> R2 Coregistration Job (depends on Job 12345)
-            │
-            └──> R2' Calculation Job (depends on Coregistration)
+    └──> Reference + MESE Preprocessing Job (depends on Job 12345)
+       │
+       └──> R2/T2 Coregistration Job (depends on preprocessing)
+          │
+          └──> R2' Calculation Job (depends on coregistration)
 
 If cleanup enabled:
     │
@@ -205,14 +231,16 @@ Final Cleanup Job (depends on all Session Cleanup jobs)
 ```
 
 **Dependency Chain:**
-1. Coregistration waits for reference image creation
-2. R2' calculation waits for coregistration completion
-3. Session cleanup waits for R2' calculation
-4. Final cleanup waits for all session cleanups
+1. Preprocessing waits for reference image creation
+2. Coregistration waits for preprocessing completion
+3. R2' calculation waits for coregistration completion
+4. Session cleanup waits for R2' calculation
+5. Final cleanup waits for all session cleanups
 
 This ensures that:
-- Reference image exists before attempting coregistration
-- R2 map is properly aligned before subtraction
+- Reference image exists before preprocessing
+- MESE sum and bias-corrected reference exist before coregistration
+- R2/T2 maps are properly aligned before subtraction
 - Intermediate files are preserved until final outputs are created
 - Global cleanup only occurs after all sessions complete
 
@@ -222,10 +250,10 @@ This ensures that:
 
 ### Main Script
 
-The main entry point is `r2prime_creation_main.sh`, which automatically discovers and processes all subjects/sessions present in all three input directories.
+The main entry point is `r2prime_creation_main.sh`, which automatically discovers and processes all subjects/sessions present in all four input directories.
 
 ```bash
-./r2prime_creation_main.sh [options] -cont <container> -pdw <pdw_dir> -r2 <r2_dir> -r2s <r2s_dir> -o <output_dir>
+./r2prime_creation_main.sh [options] -cont <container> -pdw <pdw_dir> -r2 <r2_dir> -r2s <r2s_dir> -mese <mese_dir> -o <output_dir>
 ```
 
 > Currently, there are still some hard-coded paths left in the code. You can find information about that in the [Open ToDo's](docs/todos.md).
@@ -242,6 +270,7 @@ All required arguments **must be specified with flags**:
 | `-pdw DIR`<br>`--pdw-dir DIR` | Directory containing BIDS-structured PDw echo data |
 | `-r2 DIR`<br>`--r2-dir DIR` | Directory containing BIDS-structured R2 slab data |
 | `-r2s DIR`<br>`--r2s-dir DIR` | Directory containing BIDS-structured R2* map data |
+| `-mese DIR`<br>`--mese-dir DIR` | Directory containing BIDS-structured MESE echo data |
 | `-o DIR`<br>`--output-dir DIR` | Output directory for R2' maps (creates BIDS structure) |
 
 
@@ -253,7 +282,8 @@ All required arguments **must be specified with flags**:
 | `-sub SUBJECTS`<br>`--subjects SUBJECTS` | Comma-separated list of subjects to process<br>(e.g., `sub-001,sub-002`) | All subjects |
 | `-ses SESSIONS`<br>`--sessions SESSIONS` | Comma-separated list of sessions to process<br>(e.g., `ses-01,ses-02`)<br>**Requires `-sub` to be specified** | All sessions |
 | `-w DIR`<br>`--work-dir DIR` | Working directory for intermediate files | `output_dir/Supplementary` |
-| `-fp PATTERN`<br>`--fname-pattern PATTERN` | Filename pattern for echo files | `*acq-PDw*echo-*part-mag*.nii` |
+| `-fp-pdw PATTERN`<br>`--fname-pattern PATTERN` | Filename pattern for PDw echoes | `*acq-PDw*echo-*part-mag*.nii` |
+| `-fp-mese PATTERN`<br>`--fname-pattern-mese PATTERN` | Filename pattern for MESE echoes | `*MESE*.nii*` |
 | `-pw`<br>`--preserve-workdir` | Preserve working directories after processing<br>(skip cleanup) | Cleanup enabled |
 | `--dry-run` | Show commands without executing | Execute jobs |
 | `-h`<br>`--help` | Display help message and exit | - |
@@ -280,6 +310,7 @@ All required arguments **must be specified with flags**:
   -pdw /data/pdw_echoes \
   -r2 /data/r2_slabs \
   -r2s /data/qMRI \
+   -mese /data/mese_echoes \
   -o /data/output
 ```
 
@@ -293,6 +324,7 @@ All required arguments **must be specified with flags**:
   -pdw /data/pdw_echoes \
   -r2 /data/r2_slabs \
   -r2s /data/qMRI \
+   -mese /data/mese_echoes \
   -o /data/output
 ```
 
@@ -306,6 +338,7 @@ All required arguments **must be specified with flags**:
   -pdw /data/pdw_echoes \
   -r2 /data/r2_slabs \
   -r2s /data/qMRI \
+   -mese /data/mese_echoes \
   -o /data/output
 ```
 
@@ -313,11 +346,13 @@ All required arguments **must be specified with flags**:
 
 ```bash
 ./r2prime_creation_main.sh \
-  --fname-pattern "*PDw*echo*.nii" \
+   -fp-pdw "*PDw*echo*.nii" \
+   -fp-mese "*MESE*.nii*" \
   -cont /path/to/container.sif \
   -pdw /data/pdw_echoes \
   -r2 /data/r2_slabs \
   -r2s /data/qMRI \
+   -mese /data/mese_echoes \
   -o /data/output
 ```
 
@@ -331,6 +366,7 @@ All required arguments **must be specified with flags**:
   -pdw /data/pdw_echoes \
   -r2 /data/r2_slabs \
   -r2s /data/qMRI \
+   -mese /data/mese_echoes \
   -o /data/output
 ```
 
@@ -379,20 +415,43 @@ PDw (Proton Density weighted) images are used because:
 
 | File | Description |
 |------|-------------|
-| `PDw_echoes_sum.nii` | Sum of all PDw echoes (decompressed) |
-| `PDw_echoes_sum.json` | JSON sidecar (copied from first echo) |
+| `sub-XXX_ses-YY_PDw_echoes_sum.nii` | Sum of all PDw echoes (decompressed) |
+| `sub-XXX_ses-YY_PDw_echoes_sum.json` | JSON sidecar (copied from first echo) |
 
 ---
 
-### Stage 2: R2 Slab Coregistration
+### Stage 2: Reference + MESE Preprocessing
+
+**Script:** `denoise_n4_ref_mese.sh`
+
+#### Operations Performed
+
+1. **Reference Denoise + N4**
+   - Denoises the PDw reference sum
+   - Applies N4 bias field correction
+   - Output: `sub-XXX_ses-YY_PDw_echoes_sum_n4.nii`
+
+2. **MESE Echo Summation**
+   - Sums all MESE echoes using `fslmaths`
+   - Output: `sub-XXX_ses-YY_MESE_echoes_sum.nii`
+
+3. **MESE Denoise + N4**
+   - Denoises the MESE sum
+   - Applies N4 bias field correction
+   - Output: `sub-XXX_ses-YY_MESE_echoes_sum_n4.nii`
+
+---
+
+### Stage 3: R2/T2 Slab Coregistration
 
 **Scripts:** `coreg_r2_slab_slurm.sh` → `coreg_r2_slab.m`
 
 #### Operations Performed
 
 1. **Input Validation**
-   - Verifies moving image (R2 map) exists
-   - Verifies reference image (PDw sum) exists
+   - Verifies moving image (MESE sum N4) exists
+   - Verifies reference image (PDw sum N4) exists
+   - Verifies R2 and T2 maps exist
    - Creates output directory if needed
 
 2. **SPM12 Coregistration**
@@ -402,8 +461,9 @@ PDw (Proton Density weighted) images are used because:
    - Uses normalized mutual information as cost function
 
 3. **Result Management**
-   - Moves coregistered file to the R2 input directory
-   - Adds `coreg_` prefix to filename
+   - Applies the transform to the R2 and T2 maps
+   - Moves coregistered files to the R2 input directory
+   - Adds `coreg_` prefix to filenames
    - Overwrites existing files if present
    - Validates successful completion
 
@@ -411,50 +471,12 @@ PDw (Proton Density weighted) images are used because:
    - Creates comprehensive sidecar file
    - Documents all processing parameters (including software versions and timestamps)
 
-#### SPM12 Coregistration Parameters
-
-**Estimation Options:**
-- **Cost Function:** Normalized Mutual Information (NMI)
-  - Robust to intensity differences between modalities
-  - Suitable for aligning different contrasts (R2 vs PDw)
-- **Separation:** [4 2 1 0.6] mm
-  - Multi-resolution optimization from coarse to fine
-- **Tolerances:** [0.02 0.02 0.02 0.001 0.001 0.001 0.01 0.01 0.01 0.001 0.001 0.001]
-  - Translation and rotation convergence thresholds
-- **Histogram Smoothing:** [7 7] mm FWHM
-  - Reduces noise in mutual information calculation
-
-**Reslicing Options:**
-- **Interpolation:** 4th Degree B-Spline
-  - High-quality interpolation for quantitative data
-  - Minimizes interpolation artifacts
-- **Wrapping:** No wrap [0 0 0]
-  - Appropriate for brain imaging (no periodic boundaries)
-- **Masking:** No mask
-  - Uses entire image for alignment
-- **Prefix:** `coreg_`
-  - Custom prefix for output files
-
-**Transformation Type:**
-- Rigid body (6 DOF): 3 translations + 3 rotations
-- No scaling or shearing
-- Preserves quantitative values
-
-#### Why Coregistration is Necessary
-
-R2 maps from T2 processing may have different:
-- Field of view (often smaller slab)
-- Spatial resolution
-- Image matrix size
-- Subject positioning between sessions
-
-Coregistration aligns the R2 map to match the PDw/R2* space, enabling accurate voxel-wise subtraction.
-
 #### Output Files
 
 | File | Description |
 |------|-------------|
 | `coreg_*_R2map.nii` | Coregistered R2 map in PDw space |
+| `coreg_*_T2map.nii` | Coregistered T2 map in PDw space |
 | `coreg_*_R2map.json` | Processing metadata with SPM parameters |
 
 #### MATLAB Function: coreg_r2_slab.m
@@ -462,13 +484,14 @@ Coregistration aligns the R2 map to match the PDw/R2* space, enabling accurate v
 The MATLAB function creates and executes an SPM batch for coregistration:
 
 ```matlab
-function coreg_r2_slab(moving, reference)
+function coreg_r2_slab(moving, reference, other)
     % Inputs:
-    %   moving    - Path to R2 map (will be moved to align)
+    %   moving    - Path to MESE sum (will be moved to align)
     %   reference - Path to PDw sum (target alignment)
+    %   other     - Paths to R2/T2 maps (apply the same transform)
     %
     % Outputs:
-    %   Coregistered image with 'coreg_' prefix
+    %   Coregistered images with 'coreg_' prefix
 ```
 
 The function:
@@ -476,11 +499,11 @@ The function:
 2. Initializes SPM job manager
 3. Configures coregistration batch with parameters
 4. Executes batch processing
-5. Saves output with 'coreg_' prefix
+5. Saves outputs with 'coreg_' prefix
 
 ---
 
-### Stage 3: R2' Calculation
+### Stage 4: R2' Calculation
 
 **Script:** `r2prime_calc.sh`
 
@@ -587,7 +610,7 @@ This ensures:
 
 ---
 
-### Stage 4: Cleanup
+### Stage 5: Cleanup
 
 The cleanup stage is identical to the T2 processing pipeline cleanup, with two levels:
 
