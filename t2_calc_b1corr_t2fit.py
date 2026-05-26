@@ -145,9 +145,11 @@ working_dir_vis.mkdir(exist_ok=True, parents=True)
 
 ### settings T2 fitting
 if magnetic_field == 7.0:
-    path_db = plib.Path("/data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/emc/emc_database_7T_semc_0p6_new.pkl")
+    # path_db = plib.Path("/data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/emc/emc_database_7T_semc_0p6_new.pkl")
+    path_db = plib.Path("/data/pt_03187/data/in_vivo/bids/derivatives/relax_R2/emc/histopark7T/emc_database_7T_semc_js_a.pkl")
 elif magnetic_field == 3.0:
-    path_db = plib.Path("/data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/emc/db_mese_3T_etl10.pkl")
+    # path_db = plib.Path("/data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/emc/db_mese_3T_etl10.pkl")
+    path_db = plib.Path("/data/pt_03187/data/in_vivo/bids/derivatives/relax_R2/emc/histopark3T/emc_database_3T_semc_js_histopark.pkl")
 else:
     raise ValueError(f"Unsupported magnetic field strength: {magnetic_field}. Supported values are 3.0 and 7.0 Tesla.")
 
