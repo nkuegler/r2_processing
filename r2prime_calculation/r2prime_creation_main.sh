@@ -474,6 +474,13 @@ for anat_path in "${anat_dirs[@]}"; do
         
         # Create corresponding directory structure in output
         target_output_dir="$output_dir/$subject/$session/anat"
+        # Check if the output directory exists and contains files
+        if [ -d "${target_output_dir}" ] && [ "$(ls -A "${target_output_dir}")" ]; then
+            echo "Error: Output directory '${target_output_dir}' is not empty. Skipping this session."
+            ((skipped_sessions++))
+            ((job_counter++))
+            continue
+        fi
         if [[ "$dry_run" == "false" ]]; then
             mkdir -p "$target_output_dir"
         fi
