@@ -298,6 +298,7 @@ All required arguments **must be specified with flags**:
   -pdw /data/derivatives/LORAKS/derivatives/LCPCA_distCorr/ \
   -r2 /data/derivatives/relax_R2/ \
   -r2s /data/derivatives/LORAKS/derivatives/qMRI/ \
+  -mese /data/mese_echoes \
   -o /data/derivatives/r2prime/b7T/
 ```
 
