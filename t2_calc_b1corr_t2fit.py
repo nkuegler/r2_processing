@@ -146,7 +146,8 @@ working_dir_vis.mkdir(exist_ok=True, parents=True)
 ### settings T2 fitting
 if magnetic_field == 7.0:
     # path_db = plib.Path("/data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/emc/emc_database_7T_semc_0p6_new.pkl")
-    path_db = plib.Path("/data/pt_03187/data/in_vivo/bids/derivatives/relax_R2/emc/histopark7T/emc_database_7T_semc_js_a.pkl")
+    path_db = plib.Path("/data/pt_03187/data/in_vivo/bids/derivatives/relax_R2/emc/histopark7T/emc_database_7T_semc_js_a.pkl") # histopark 7T Leipzig (Terra.X XA60)
+    # path_db = plib.Path("/data/pt_02262/data/liege_data/bids/derivatives/relax_R2_new/emc/histopark7T_liege/emc_database_7T_semc_js_histoparkLiege.pkl") # histopark 7T Liege (Terra VE12)
 elif magnetic_field == 3.0:
     # path_db = plib.Path("/data/pt_02262/data/TH_bids/bids/derivatives/relax_R2/emc/db_mese_3T_etl10.pkl")
     path_db = plib.Path("/data/pt_03187/data/in_vivo/bids/derivatives/relax_R2/emc/histopark3T/emc_database_3T_semc_js_histopark.pkl")
