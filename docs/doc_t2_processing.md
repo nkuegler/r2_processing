@@ -106,7 +106,9 @@ The pipeline uses a Singularity container with PyMRItools and all dependencies. 
 > **Note:** If you are working in the compute infrastructure of the MPI CBS (Leipzig, Germany), the **pre-built container** may be found at: `/data/p_gr_weiskopf_software/singularity/pymritools.sif`
 
 If that does not work for you, you have to build the container yourself. Navigate to your working directory and prepare the container build files:
-> **Another hint for MPI CBS members:** It seems to be problematic to build a container directly in storage unified `/data`. Move the files to `/tmp` (on your local machine or a compute server) and build it there.
+> **Another hint for MPI CBS members:** It seems to be problematic to build a container directly in storage unified `/data`. Move the files to `/tmp` (on your local machine (recommended) or a compute server) and build it there. Potentially set `SINGULARITY_TMPDIR` and `SINGULARITY_CACHEDIR` to a directory with sufficient space such as in `/tmp`.
+
+> **Important:** Set up a classic token (no extra permissions needed) for cloning public repositories from GitHub. In the container build process, the terminal will prompt you for your GitHub credentials. Make sure to enter your username and PAT (not your usual GitHub password) when prompted.
 
 ```bash
 mkdir /tmp/container_build
