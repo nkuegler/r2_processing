@@ -348,6 +348,7 @@ The main entry point is `t2_processing_main.sh`, which automatically discovers a
 | `-ses SESSIONS`<br>`--sessions SESSIONS` | Comma-separated list of sessions to process<br>(e.g., `ses-01,ses-02`)<br>**Requires `-sub` to be specified** | All sessions |
 | `-w DIR`<br>`--work-dir DIR` | Working directory for intermediate files | `output_dir/Supplementary` |
 | `-nmd DIR`<br>`--noise-mask-dir DIR` | Directory containing manual noise masks<br>**Required for 3T data** | `output_dir/manualNoiseMasks` |
+| `-b1 DIR`<br>`--use-custom-b1 DIR` | **Optional:** Path to BIDS-compatible directory with custom B1+ maps<br>Uses external B1+ instead of AFI+EMC approach | Standard AFI+EMC workflow |
 | `-pw`<br>`--preserve-workdir` | Preserve working directories after processing<br>(skip cleanup) | Cleanup enabled |
 | `--dry-run` | Show commands without executing | Execute jobs |
 | `-h`<br>`--help` | Display help message and exit | - |
@@ -399,6 +400,35 @@ The main entry point is `t2_processing_main.sh`, which automatically discovers a
   /data/input/bids \
   /data/output/derivatives/relax_R2
 ```
+
+#### Using Custom B1+ Maps
+
+```bash
+./t2_processing_main.sh \
+  -cont /path/to/pymritools.sif \
+  -b 7 \
+  -b1 /data/custom_b1_maps \
+  Terra \
+  /data/input/bids \
+  /data/output/derivatives/relax_R2
+```
+
+The custom B1+ directory should follow this structure:
+```
+/data/custom_b1_maps/
+├── sub-001/
+│   └── ses-01/
+│       └── anat/
+│           └── Supplementary/
+│               └── *stx*B1map.nii[.gz]
+├── sub-002/
+│   └── ses-01/
+│       └── anat/
+│           └── Supplementary/
+│               └── *stx*B1map.nii[.gz]
+```
+
+The name of the subdirectory (e.g., "Supplementary") and the B1+ map pattern to search for (e.g., "*stx*B1map.nii") can be adjusted in the `t2_calc_b1corr_t2fit.py` script.
 
 #### Custom Working Directory with Preservation
 
@@ -552,6 +582,33 @@ For my 3T data, the `autodmri` approach (`pymritools.processing.denoising.extrac
 
 #### Operations Performed
 
+The B1+ correction strategy depends on whether custom B1+ maps are provided:
+
+##### Custom B1+ Map Workflow (when `-b1` flag specified)
+
+1. **Custom B1+ Map Loading**
+   - Locates B1+ map in BIDS-compatible directory structure
+   - Expected path: `custom_b1_dir/sub-XXX/ses-YY/anat/Supplementary/*stx*B1map.nii*`
+   - Copies map and optional JSON sidecar to working directory
+   - Automatically detects and handles both percentage (0-200%) and unitless (0-2) representations
+
+2. **B1+ Map Resampling**
+   - Resamples custom B1+ map to MESE acquisition space using ANTs
+   - Uses linear interpolation (suitable for smooth field maps)
+   - Matches geometry and resolution of MESE data
+
+3. **B1+ Map Smoothing**
+   - Applies Gaussian smoothing ($\sigma = 2$ voxels) for noise reduction
+   - Preserves biological variability in B1+ field
+
+4. **Dictionary-based T2 Fitting**
+   - Loads pre-computed signal dictionary
+   - Uses custom B1+ map as fixed input (no regularization)
+   - Pattern matching optimizes only for T2 values
+   - Faster processing compared to standard approach (skips AFI calculation and EMC fitting)
+
+##### Standard AFI + EMC Workflow (default, when `-b1` flag not specified)
+
 1. **B1+ Mapping from AFI**
    - Calculates actual flip angle from dual-TR AFI acquisition
    - Applies spatial smoothing (kernel size: 3)
@@ -604,6 +661,17 @@ For my 3T data, the `autodmri` approach (`pymritools.processing.denoising.extrac
 | `*_TB1map.nii` + `.json` | Regularized B1+ transmit field map | `TB1map` |
 
 **Intermediate Results (saved to `work_dir`):**
+
+For **Custom B1+ Workflow:**
+
+| File | Description |
+|------|-------------|
+| `*_proc-CustomB1_TB1map.nii` | Custom B1+ map resampled and smoothed to MESE space |
+| `mese_data_reg_snr.nii` | Estimated SNR map |
+| `mese_data_reg_snr_thr.nii` | Thresholded SNR map (< 5) |
+| `figs/*.html` | Quality control visualizations |
+
+For **Standard AFI + EMC Workflow:**
 
 | File | Description |
 |------|-------------|

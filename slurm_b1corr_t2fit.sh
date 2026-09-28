@@ -10,7 +10,7 @@
 #   The script processes the input MESE data to produce T2 maps with B1+ field inhomogeneity correction.
 #
 # USAGE:
-#   sbatch slurm_b1corr_t2fit.sh [--gpu=1] <CONTAINER_PATH> <SUBJECT> <SESSION> <MAGNETIC_FIELD> <INPUT_DIR> <WORK_DIR> <OUTPUT_DIR> <TR_RATIO> <FLIP_ANGLE> <DENOISE_DIR>
+#   sbatch slurm_b1corr_t2fit.sh [--gpu=1] <CONTAINER_PATH> <SUBJECT> <SESSION> <MAGNETIC_FIELD> <INPUT_DIR> <WORK_DIR> <OUTPUT_DIR> <TR_RATIO> <FLIP_ANGLE> <DENOISE_DIR> [CUSTOM_B1_DIR]
 #
 # ARGUMENTS:
 #   CONTAINER_PATH  - Path to Singularity container with PyMRItools, FSL, and ANTS
@@ -23,6 +23,7 @@
 #   TR_RATIO        - TR ratio (TR2/TR1) for AFI B1+ calculation (e.g., 5.0)
 #   FLIP_ANGLE      - Flip angle of AFI images in degrees (e.g., 55.0)
 #   DENOISE_DIR     - Path to directory containing denoised data
+#   CUSTOM_B1_DIR   - (optional) Path to BIDS-compatible directory containing custom B1+ maps
 #
 # OPERATIONS PERFORMED:
 #   1. B1+ field mapping from AFI data
@@ -62,6 +63,7 @@ OUTPUT_DIR="$7"
 TR_RATIO="$8"
 FLIP_ANGLE="$9"
 DENOISE_DIR="${10}"
+CUSTOM_B1_DIR="${11:-}"
 
 
 echo "--------"
@@ -75,6 +77,9 @@ echo "Output Directory: ${OUTPUT_DIR}"
 echo "TR Ratio: ${TR_RATIO}"
 echo "Flip Angle: ${FLIP_ANGLE}°"
 echo "Denoise Directory: ${DENOISE_DIR}"
+if [[ -n "${CUSTOM_B1_DIR}" ]]; then
+    echo "Custom B1 Directory: ${CUSTOM_B1_DIR}"
+fi
 echo "--------"
 
 # this job requests using a GPU 
@@ -97,6 +102,11 @@ cmd_args=(
     "--flip-angle" "${FLIP_ANGLE}"
     "--denoise-dir" "${DENOISE_DIR}"
 )
+
+# Add custom B1 directory if provided
+if [[ -n "${CUSTOM_B1_DIR}" ]]; then
+    cmd_args+=("--use-custom-b1" "${CUSTOM_B1_DIR}")
+fi
 
 singularity exec "${CONTAINER_PATH}" "${cmd_args[@]}"
 EXIT_CODE=$?

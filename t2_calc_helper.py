@@ -11,12 +11,15 @@ Functions:
 - load_nifti_as_tensor(): Load NIfTI file and return as PyTorch tensor
 - get_timestamp(): Get current timestamp in ISO format
 - copy_corresponding_json(): Copy JSON metadata files between directories
+- resample_3d_ants(): Resample 3D NIfTI file to match reference space using ANTS
 
 Author: Niklas Kuegler (kuegler@cbs.mpg.de)
 """
 
 import pathlib as plib
 import logging
+import subprocess
+import sys
 
 import nibabel as nib
 import numpy as np
@@ -217,3 +220,139 @@ def create_processing_json(json_dest, map_type, processing_info):
         json.dump(metadata, f, indent=2)
     
     print(f"Created processing JSON metadata at {json_dest}")
+
+
+def resample_3d_ants(input_file, reference_file, output_file, description="", interpolation_mode="Linear"):
+    """
+    Resample a 3D NIfTI file to match the space and resolution of a reference file using ANTS.
+    
+    This function uses the resample_3D.sh script (which calls FSL and ANTS commands) to perform
+    spatial resampling via linear or nearest neighbor interpolation.
+    
+    Parameters
+    ----------
+    input_file : pathlib.Path or str
+        Path to the 3D NIfTI file to be resampled.
+    reference_file : pathlib.Path or str
+        Path to the reference 4D NIfTI file defining the target space.
+    output_file : pathlib.Path or str
+        Path where the resampled file will be saved.
+    description : str, optional
+        Description of the resampling operation for logging (default: "").
+    interpolation_mode : str, optional
+        Interpolation mode for resampling. Options: "Linear" (default), "NearestNeighbor", "BSpline".
+        Default is "Linear" which is suitable for smooth data like B1+ maps. (BSpline seems to cause issues)
+        
+    Returns
+    -------
+    pathlib.Path
+        Path to the output resampled file.
+        
+    Raises
+    ------
+    RuntimeError
+        If the resample_3D.sh script fails (non-zero exit code).
+    
+    Notes
+    -----
+    - Requires resample_3D.sh script in the same directory as this module
+    - Requires ANTS to be installed and in PATH
+    - The reference file should be a 4D image; only the geometry/affine is used
+    """
+    
+    # Get the directory containing this script
+    script_dir = plib.Path(__file__).parent
+    resample_script = script_dir / "resample_3D.sh"
+    
+    if not resample_script.exists():
+        raise FileNotFoundError(f"Resample script not found at {resample_script}")
+    
+    # Convert to Path objects if strings
+    input_file = plib.Path(input_file)
+    reference_file = plib.Path(reference_file)
+    output_file = plib.Path(output_file)
+    
+    # Build the command
+    cmd = [
+        str(resample_script),
+        str(input_file),
+        str(reference_file),
+        str(output_file),
+        interpolation_mode
+    ]
+    
+    # Print status message
+    if description:
+        print(f"Resampling: {description}", flush=True)
+    else:
+        print(f"Resampling {input_file.name} to match {reference_file.name}", flush=True)
+    
+    # Execute the resampling command
+    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    print(result.stdout, flush=True)
+    
+    if result.returncode != 0:
+        error_msg = f"Error during resampling: {result.stdout}"
+        print(error_msg, file=sys.stderr, flush=True)
+        raise RuntimeError(error_msg)
+    
+    print("-------------------------", flush=True)
+    
+    return output_file
+
+
+def copy_custom_b1map_to_workdir(custom_b1_root_dir, subject, session, working_dir, custom_b1_subdir, custom_b1_pattern):
+    """
+    Load custom B1+ map from BIDS-compatible directory structure.
+    
+    Expected structure: custom_b1_root_dir/sub-xxx/ses-xx/anat/Supplementary/<custom_b1_pattern>
+    
+    Args:
+        custom_b1_root_dir: Root directory containing BIDS-structured custom B1 maps
+        subject: Subject identifier (e.g., 'sub-001')
+        session: Session identifier (e.g., 'ses-01')
+        working_dir: Working directory where to copy the B1 map
+        custom_b1_subdir: Subdirectory within the anat/ directory containing custom B1 maps
+        custom_b1_pattern: Filename pattern for custom B1 map (glob pattern)
+    Returns:
+        path_custom_b1: Path to the loaded custom B1 map in working directory
+        custom_b1_filename: Filename of the custom B1 map
+        
+    Raises:
+        FileNotFoundError: If no B1 map found matching the pattern
+    """
+    custom_b1_source_dir = plib.Path(custom_b1_root_dir) / subject / session / "anat" / custom_b1_subdir
+    
+    if not custom_b1_source_dir.exists():
+        raise FileNotFoundError(
+            f"Custom B1 map directory does not exist: {custom_b1_source_dir}\n"
+            f"Expected structure: {custom_b1_root_dir}/{subject}/{session}/anat/{custom_b1_subdir}/")
+    
+    # Find B1 map matching the pattern
+    b1_files = list(custom_b1_source_dir.glob(custom_b1_pattern))
+    
+    if not b1_files:
+        raise FileNotFoundError(
+            f"No B1 map files found in {custom_b1_source_dir} matching pattern '{custom_b1_pattern}'.\n"
+            f"Please check the directory and pattern.")
+    
+    if len(b1_files) > 1:
+        logging.warning(f"Multiple B1 map files found matching pattern '{custom_b1_pattern}'. Using the first one.")
+        logging.warning(f"Found files: {[f.name for f in b1_files]}")
+    
+    b1_source_file = b1_files[0]
+    custom_b1_filename = b1_source_file.stem  # filename without extension
+    
+    # Copy B1 map to working directory
+    b1_dest_file = working_dir / (b1_source_file.name)
+    shutil.copy2(b1_source_file, b1_dest_file)
+    logging.info(f"Copied custom B1 map to working directory: {b1_dest_file}")
+    
+    # Copy corresponding JSON sidecar if it exists
+    json_source = b1_source_file.with_suffix('.json')
+    if json_source.exists():
+        json_dest = b1_dest_file.with_suffix('.json')
+        shutil.copy2(json_source, json_dest)
+        logging.info(f"Copied corresponding JSON sidecar: {json_dest}")
+    
+    return b1_dest_file, custom_b1_filename

@@ -158,8 +158,26 @@ For 3T data, create manual noise masks:
 | `-ses SESSIONS` | Comma-separated session list (requires `-sub`) | All sessions |
 | `-nmd DIR` | Noise mask directory (**required for 3T**) | `output_dir/manualNoiseMasks` |
 | `-pw` | Preserve working directories (skip cleanup) | Cleanup enabled |
+| `-b1 DIR` | **Optional:** Path to BIDS-compatible directory with custom B1+ maps | Standard AFI+EMC approach |
 
 > For all options, see: `./t2_processing_main.sh --help` or [full documentation](docs/doc_t2_processing.md#command-line-options)
+
+##### Custom B1+ Map Option
+
+Instead of calculating B1+ maps from AFI and MESE data, you can provide pre-computed external B1+ maps. This is useful when you have high-quality B1+ maps from alternative mapping techniques (e.g., HMRI toolbox, Siemens B1+ mapping sequences, or other external sources). Custom B1+ maps should follow a BIDS-compatible directory structure:
+
+```
+custom_b1_directory/
+├── sub-XXX/
+│   └── ses-YY/
+│       └── anat/
+│           └── Supplementary/
+│               ├── *stx*B1map.nii[.gz]  (B1+ map file)
+│               └── *stx*B1map.json      (BIDS sidecar, optional)
+```
+The name of the subdirectory (e.g., "Supplementary") and the B1+ map pattern to search for (e.g., "*stx*B1map.nii") can be adjusted in the `t2_calc_b1corr_t2fit.py` script.
+
+B1+ values can be in percentage (0-200%) or unitless (0-2); automatic detection is applied during processing. When using custom B1+, the standard AFI calculation and regularization steps are skipped, and the provided map is directly resampled to MESE space and used for T2 fitting.
 
 #### Examples
 
@@ -184,6 +202,17 @@ For 3T data, create manual noise masks:
   -ses ses-05 \
   -nmd /data/derivatives/relax_R2/manualNoiseMasks \
   Prisma_fit \
+  /data/bids_input \
+  /data/derivatives/relax_R2
+```
+
+**Using Custom B1+ Maps:**
+```bash
+./t2_processing_main.sh \
+  -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif \
+  -b 7 \
+  -b1 /path/to/custom_b1_maps \
+  Terra \
   /data/bids_input \
   /data/derivatives/relax_R2
 ```

@@ -22,6 +22,7 @@ OPTIONS:
     -b FIELD | --magnetic-field FIELD: magnetic field strength in Tesla (default: 7)
     -fa ANGLE | --flip-angle ANGLE: flip angle of the AFI acquisition in degrees (default: 55.0)
     -tr RATIO | --tr-ratio RATIO: TR ratio between the two AFI acquisitions (default: 5.0)
+    -b1 | --use-custom-b1: use custom B1+ map to the processing pipeline. This argument is supposed to be a path to a BIDS-compliant directory containing a subdirectory (default name: Supplementary) with the custom B1+ map (default: generated dynamically from AFI and EMC) 
     -w DIR | --work-dir DIR: working directory for intermediate files (default: output_directory/Supplementary). Three subdirectories will be created inside the working directory: denoise, gnlc, t2fit.
     -nmd | --noise-mask-dir DIR: directory containing noise masks (default: output_directory/manualNoiseMasks, only used for 3T data)
     -pw | --preserve-workdir: preserve working directories after processing (default: working directories are deleted)
@@ -86,6 +87,7 @@ flip_angle=55.0
 tr_ratio=5.0
 container_path=""
 noise_mask_dir=""
+custom_b1_dir=""
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -120,6 +122,11 @@ while [[ $# -gt 0 ]]; do
             ;;
         -tr|--tr-ratio)
             tr_ratio="$2"
+            shift 2
+            ;;
+        -b1|--use-custom-b1)
+            custom_b1_dir="$2"
+            use_custom_b1=true
             shift 2
             ;;
         -w|--work-dir)
@@ -232,6 +239,11 @@ fi
 
 if ! [[ "$tr_ratio" =~ ^[0-9]+\.?[0-9]*$ ]]; then
     echo "Error: TR ratio must be a number"
+    exit 1
+fi
+
+if [[ "$use_custom_b1" == "true" && ! -d "$custom_b1_dir" ]]; then
+    echo "Error: Custom B1+ directory does not exist: $custom_b1_dir"
     exit 1
 fi
 
@@ -724,8 +736,11 @@ echo "AFI GNLC job ID: \$afi_gnlc_job_id"
 
 # Submit T2 fitting job with dependency on actual GNLC job IDs
 t2fit_dependency="--dependency=afterok:\${mese_gnlc_job_id}:\${afi_gnlc_job_id}"
-t2fit_cmd="sbatch -p short,group_servers,gr_weiskopf \${t2fit_dependency} --gpus=1 --job-name=$t2fit_job_name \"$t2fit_script\" \"$container_path\" \"$subject\" \"$session\" \"$magnetic_field\" \"$output_dir_gnlc\" \"$working_dir_t2fit\" \"$output_dir\" \"$tr_ratio\" \"$flip_angle\" \"$output_dir_denoise\" \"$delete_workdir\""
-
+if [[ -n "$custom_b1_dir" && "$use_custom_b1" == "true" ]]; then
+    t2fit_cmd="sbatch -p short,group_servers,gr_weiskopf \${t2fit_dependency} --gpus=1 --job-name=$t2fit_job_name \"$t2fit_script\" \"$container_path\" \"$subject\" \"$session\" \"$magnetic_field\" \"$output_dir_gnlc\" \"$working_dir_t2fit\" \"$output_dir\" \"$tr_ratio\" \"$flip_angle\" \"$output_dir_denoise\" \"$custom_b1_dir\""
+else
+    t2fit_cmd="sbatch -p short,group_servers,gr_weiskopf \${t2fit_dependency} --gpus=1 --job-name=$t2fit_job_name \"$t2fit_script\" \"$container_path\" \"$subject\" \"$session\" \"$magnetic_field\" \"$output_dir_gnlc\" \"$working_dir_t2fit\" \"$output_dir\" \"$tr_ratio\" \"$flip_angle\" \"$output_dir_denoise\""
+fi
 echo "Submitting T2 fitting job with command:"
 echo "\$t2fit_cmd"
 
