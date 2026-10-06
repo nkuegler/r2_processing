@@ -119,7 +119,7 @@ The pipeline requires four BIDS-structured input directories (PDw, R2*, R2, MESE
 
 A Singularity container with FSL tools is required. The container path must be specified with the `-cont` flag.
 
-> **Note:** If you are working in the compute infrastructure of the MPI CBS (Leipzig, Germany), the **pre-built container** may be found at: `/data/p_gr_weiskopf_software/singularity/pymritools.sif` \
+> **Note:** If you are working in the compute infrastructure of the MPI CBS (Leipzig, Germany), the **pre-built container** may be found at: `/data/p_gr_weiskopf_software/singularity/pymritools_c1b1568.sif` \
 > If you cannot access it, you can build the container yourself. Instructions on how to do this are available in the documentation of the T2 processing pipeline.
 
 ---
@@ -294,7 +294,7 @@ All required arguments **must be specified with flags**:
 
 ```bash
 ./r2prime_creation_main.sh \
-  -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif \
+  -cont /data/p_gr_weiskopf_software/singularity/pymritools_c1b1568.sif \
   -pdw /data/derivatives/LORAKS/derivatives/LCPCA_distCorr/ \
   -r2 /data/derivatives/relax_R2/ \
   -r2s /data/derivatives/LORAKS/derivatives/qMRI/ \

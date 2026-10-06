@@ -88,7 +88,7 @@ fi
 singularity exec "${CONTAINER_PATH}" "${cmd_args[@]}"
 
 ### for use in the CBS infrastructure (not in the container):
-# source ~/bash.conda
+# source ~/.bashrc.conda
 # conda activate mri_tools_env
 
 # # Build python command as array

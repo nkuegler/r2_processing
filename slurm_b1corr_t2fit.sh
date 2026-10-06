@@ -113,7 +113,7 @@ EXIT_CODE=$?
 
 
 ### for use in the CBS infrastructure (not in the container):
-# source ~/bash.conda
+# source ~/.bashrc.conda
 # conda activate mri_tools_env
 
 # python3 ${t2_script} \

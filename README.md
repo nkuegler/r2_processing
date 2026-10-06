@@ -80,7 +80,7 @@ parent_directory/
 
 For MPI CBS employees: Pre-built container available at:
 ```
-/data/p_gr_weiskopf_software/singularity/pymritools.sif
+/data/p_gr_weiskopf_software/singularity/pymritools_c1b1568.sif
 ```
 
 Or build your own using provided container build file (see [detailed documentation](docs/doc_t2_processing.md#container-setup)).
@@ -184,7 +184,7 @@ B1+ values can be in percentage (0-200%) or unitless (0-2); automatic detection 
 **7T Processing (All Subjects):**
 ```bash
 ./t2_processing_main.sh \
-  -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif \
+  -cont /data/p_gr_weiskopf_software/singularity/pymritools_c1b1568.sif \
   -b 7 \
   Terra \
   /data/bids_input \
@@ -194,7 +194,7 @@ B1+ values can be in percentage (0-200%) or unitless (0-2); automatic detection 
 **3T Processing (Specific Subject):**
 ```bash
 ./t2_processing_main.sh \
-  -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif \
+  -cont /data/p_gr_weiskopf_software/singularity/pymritools_c1b1568.sif \
   -b 3 \
   -fa 60.0 \
   -tr 3.0 \
@@ -209,7 +209,7 @@ B1+ values can be in percentage (0-200%) or unitless (0-2); automatic detection 
 **Using Custom B1+ Maps:**
 ```bash
 ./t2_processing_main.sh \
-  -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif \
+  -cont /data/p_gr_weiskopf_software/singularity/pymritools_c1b1568.sif \
   -b 7 \
   -b1 /path/to/custom_b1_maps \
   Terra \
@@ -264,7 +264,7 @@ B1+ values can be in percentage (0-200%) or unitless (0-2); automatic detection 
 **Process All Sessions:**
 ```bash
 ./r2prime_calculation/r2prime_creation_main.sh \
-  -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif \
+  -cont /data/p_gr_weiskopf_software/singularity/pymritools_c1b1568.sif \
   -pdw /data/derivatives/LCPCA_distCorr \
   -r2 /data/derivatives/relax_R2 \
   -r2s /data/derivatives/qMRI_noB1corr \
@@ -275,7 +275,7 @@ B1+ values can be in percentage (0-200%) or unitless (0-2); automatic detection 
 **Process Specific Subject/Session:**
 ```bash
 ./r2prime_calculation/r2prime_creation_main.sh \
-  -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif \
+  -cont /data/p_gr_weiskopf_software/singularity/pymritools_c1b1568.sif \
   -sub sub-001 \
   -ses ses-05 \
   -pdw /data/derivatives/LCPCA_distCorr \
@@ -294,7 +294,7 @@ B1+ values can be in percentage (0-200%) or unitless (0-2); automatic detection 
 ```bash
 # Step 1: T2 Processing
 ./t2_processing_main.sh \
-  -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif \
+  -cont /data/p_gr_weiskopf_software/singularity/pymritools_c1b1568.sif \
   -b 7 \
   Terra \
   /data/bids_input \
@@ -302,7 +302,7 @@ B1+ values can be in percentage (0-200%) or unitless (0-2); automatic detection 
 
 # Step 2: R2' Calculation (after T2 processing and qMRI complete)
 ./r2prime_calculation/r2prime_creation_main.sh \
-  -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif \
+  -cont /data/p_gr_weiskopf_software/singularity/pymritools_c1b1568.sif \
   -pw \
   -pdw /data/derivatives/LCPCA_distCorr \
   -r2 /data/derivatives/relax_R2 \
@@ -318,7 +318,7 @@ B1+ values can be in percentage (0-200%) or unitless (0-2); automatic detection 
 
 # Step 1: T2 Processing
 ./t2_processing_main.sh \
-  -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif \
+  -cont /data/p_gr_weiskopf_software/singularity/pymritools_c1b1568.sif \
   -b 3 \
   -fa 60.0 \
   -tr 3.0 \
@@ -329,7 +329,7 @@ B1+ values can be in percentage (0-200%) or unitless (0-2); automatic detection 
 
 # Step 2: R2' Calculation
 ./r2prime_calculation/r2prime_creation_main.sh \
-  -cont /data/p_gr_weiskopf_software/singularity/pymritools.sif \
+  -cont /data/p_gr_weiskopf_software/singularity/pymritools_c1b1568.sif \
   -pw \
   -pdw /data/derivatives/LCPCA_distCorr \
   -r2 /data/derivatives/relax_R2 \
