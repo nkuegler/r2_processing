@@ -123,10 +123,12 @@ fi
 # GNLC OR COPY
 # ============================================================
 if [[ "$MODE" == "gnlc" ]]; then
+    # GNLC contrast (also names the GNLC working directory wd_<contrast>), without trailing underscore
+    gnlc_contrast="${b1_prefix%_}"
     gnlc_cmd=(
         bash "$GNLC_SCRIPT"
         --nj
-        -c "$b1_prefix"
+        -c "$gnlc_contrast"
         -p "B1map"
         -sub "$SUBJECT"
         -ses "$SESSION"

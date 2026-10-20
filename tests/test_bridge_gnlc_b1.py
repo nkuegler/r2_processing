@@ -52,7 +52,7 @@ def test_gnlc_mode_runs_gnlc_without_jacobian(setup):
     gnlc_args = (tmp_path / "gnlc_stub.sh.args").read_text().split()
     assert "--nj" in gnlc_args
     assert gnlc_args[gnlc_args.index("-p") + 1] == "B1map"
-    assert gnlc_args[gnlc_args.index("-c") + 1] == B1_STEM
+    assert gnlc_args[gnlc_args.index("-c") + 1] == B1_STEM.rstrip("_")
     assert gnlc_args[gnlc_args.index("-job-name") + 1] == JOB_NAME
 
     staged = tmp_path / "t2fit" / SUBJ / SESS / "anat" / f"{B1_STEM}B1map"
