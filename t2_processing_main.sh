@@ -559,14 +559,14 @@ for anat_path in "${anat_dirs[@]}"; do
                 case "$b1_gnlc" in
                     true)
                         b1_mode="precorrected"
-                        echo "  B1+ map was calculated from GNL-corrected data -> no GNLC of the B1+ map"
+                        echo "      B1+ map was calculated from GNL-corrected data -> no GNLC of the B1+ map"
                         ;;
                     false)
                         b1_mode="gnlc"
-                        echo "  B1+ map was calculated from data NOT corrected for gradient nonlinearities -> GNLC (without jacobian correction) of the B1+ map"
+                        echo "      B1+ map was calculated from data NOT corrected for gradient nonlinearities -> GNLC (without jacobian correction) of the B1+ map"
                         ;;
                     *)
-                        echo "  ERROR: Could not determine whether the custom B1+ map was calculated from GNL-corrected data"
+                        echo "      ERROR: Could not determine whether the custom B1+ map was calculated from GNL-corrected data"
                         echo "         (no *B1ref.json with the key NonlinearGradientCorrection found next to $b1map_file)."
                         echo "         Use -b1asis/--b1-use-as-is to use the B1+ map as is."
                         echo "  Skipping this session."

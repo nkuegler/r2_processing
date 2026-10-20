@@ -70,15 +70,15 @@ b1_gnlc_status() {
     value="$(_b1_json_gnlc_value "$b1ref_json")"
     case "$value" in
         true|false)
-            echo "  NonlinearGradientCorrection=$value in $b1ref_json" >&2
+            echo "      NonlinearGradientCorrection=$value in $b1ref_json" >&2
             echo "$value"
             ;;
         missing)
-            echo "  Key NonlinearGradientCorrection not found in $b1ref_json" >&2
+            echo "      Key NonlinearGradientCorrection not found in $b1ref_json" >&2
             echo "unknown"
             ;;
         *)
-            echo "  Could not read NonlinearGradientCorrection from $b1ref_json (value: $value)" >&2
+            echo "      Could not read NonlinearGradientCorrection from $b1ref_json (value: $value)" >&2
             echo "unknown"
             ;;
     esac
