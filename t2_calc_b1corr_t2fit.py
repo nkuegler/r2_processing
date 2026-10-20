@@ -598,7 +598,7 @@ processing_info = {
         "R2 map calculation from T2 values"
     ],
     "software_version": {
-        "PyMRItools": "commit c1b1568",
+        "PyMRItools": helper.get_pymritools_version(),
         "processing_script": "t2_calc_b1corr_t2fit.py"
     },
     "database_path": str(path_db),

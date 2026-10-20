@@ -10,6 +10,7 @@ Functions:
 - save_nifti(): Save data as NIfTI file with optional header customization
 - load_nifti_as_tensor(): Load NIfTI file and return as PyTorch tensor
 - get_timestamp(): Get current timestamp in ISO format
+- get_pymritools_version(): Get installed PyMRItools commit hash
 - copy_corresponding_json(): Copy JSON metadata files between directories
 - create_processing_json(): Create JSON metadata for processed T2/R2/B1+ maps
 - resample_3d_ants(): Resample 3D NIfTI file to match reference space using ANTS
@@ -18,6 +19,7 @@ Author: Niklas Kuegler (kuegler@cbs.mpg.de)
 """
 
 import pathlib as plib
+import importlib.metadata
 import logging
 import subprocess
 import sys
@@ -126,6 +128,45 @@ def get_timestamp():
         Current timestamp in ISO 8601 format
     """
     return datetime.now().isoformat()
+
+
+def get_pymritools_version():
+    """
+    Get the installed PyMRItools commit hash.
+
+    The container installs PyMRItools via ``pip install git+...@<commit>``, for which pip records the
+    resolved commit in ``direct_url.json`` (PEP 610). For local (editable) installs, the commit is
+    queried from the git repository instead.
+
+    Returns
+    -------
+    str
+        "commit <hash>", or "version <version>" / "unknown" if the commit cannot be determined
+    """
+    try:
+        dist = importlib.metadata.distribution("pymritools")
+    except importlib.metadata.PackageNotFoundError:
+        logging.warning("PyMRItools distribution not found, version is unknown")
+        return "unknown"
+
+    direct_url = json.loads(dist.read_text("direct_url.json") or "{}")
+    commit_id = direct_url.get("vcs_info", {}).get("commit_id")
+    if commit_id:
+        return f"commit {commit_id}"
+
+    # local install: query the git repository
+    if direct_url.get("url", "").startswith("file://"):
+        try:
+            commit_id = subprocess.run(
+                ["git", "-C", direct_url["url"][len("file://"):], "rev-parse", "HEAD"],
+                capture_output=True, text=True, check=True,
+            ).stdout.strip()
+            return f"commit {commit_id}"
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            pass
+
+    logging.warning("PyMRItools commit could not be determined, using package version")
+    return f"version {dist.version}"
 
 
 def copy_corresponding_json(json_source, json_dest):
