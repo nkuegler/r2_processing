@@ -90,6 +90,8 @@
    - path to the database for pattern matching specified in `t2_calc_b1corr_t2fit.py`
    - not convenient -> may need to be adjusted by defining it in a separate settings file or similar (flag for specifying the path does not seem the best solution)
 
+12. **Refactoring**
+   - R2' creation: Ref is summed in a .sh script, after that there is a script which denoises and corrects ref, but also sums, denoises, and corrects all MESE echoes. Why is the summation script not re-used? And why is there no function that denoises and corrects any file, which is then called twice?
 
 
 ### Future Enhancements
