@@ -7,7 +7,7 @@ This repository contains automated pipelines for processing Multi-Echo Spin-Echo
 > - [R2' Calculation Pipeline Documentation](docs/doc_r2prime_calculation.md)
 
 > [!IMPORTANT]
-> If you are planning to use an T2 pattern database created with and older version of PyMRItools, please ensure that there are no issues regarding the backward compatibility (main branch operates at PyMRItools commit 335c40b). The branch `workingStatus_IronSleep` uses a legacy version of PyMRItools and the contains the corresponding container build file (commit 7d29483). The most secure way to ensure compatibility is to use the same version of PyMRItools for both the database creation and the T2 fitting code.
+> If you are planning to use an T2 pattern database created with and older version of PyMRItools, please ensure that there are no issues regarding the backward compatibility (main branch operates at PyMRItools commit c1b1568). The branch `workingStatus_IronSleep` uses a legacy version of PyMRItools and the contains the corresponding container build file (commit 7d29483). The most secure way to ensure compatibility is to use the same version of PyMRItools for both the database creation and the T2 fitting code.
 
 ---
 
@@ -158,7 +158,8 @@ For 3T data, create manual noise masks:
 | `-ses SESSIONS` | Comma-separated session list (requires `-sub`) | All sessions |
 | `-nmd DIR` | Noise mask directory (**required for 3T**) | `output_dir/manualNoiseMasks` |
 | `-pw` | Preserve working directories (skip cleanup) | Cleanup enabled |
-| `-b1 DIR` | **Optional:** Path to BIDS-compatible directory with custom B1+ maps | Standard AFI+EMC approach |
+| `-b1 DIR` | **Optional:** Path to BIDS-compatible directory with custom B1+ maps | AFI-based approach (see `B1_METHOD`) |
+| `-b1asis` | **Optional:** Use the custom B1+ map as is, without checking its GNLC status (requires `-b1`) | GNLC status checked |
 
 > For all options, see: `./t2_processing_main.sh --help` or [full documentation](docs/doc_t2_processing.md#command-line-options)
 
@@ -173,11 +174,29 @@ custom_b1_directory/
 │       └── anat/
 │           └── Supplementary/
 │               ├── *stx*B1map.nii[.gz]  (B1+ map file)
-│               └── *stx*B1map.json      (BIDS sidecar, optional)
+│               ├── *stx*B1map.json      (BIDS sidecar, optional)
+│               └── *stx*B1ref.json      (sidecar of the B1+ reference, contains NonlinearGradientCorrection)
 ```
-The name of the subdirectory (e.g., "Supplementary") and the B1+ map pattern to search for (e.g., "*stx*B1map.nii") can be adjusted in the `t2_calc_b1corr_t2fit.py` script.
+The name of the subdirectory (e.g., "Supplementary") and the B1+ map pattern to search for (e.g., "*stx*B1map.nii*") can be adjusted at the top of the `t2_processing_main.sh` script.
 
-B1+ values can be in percentage (0-200%) or unitless (0-2); automatic detection is applied during processing. When using custom B1+, the standard AFI calculation and regularization steps are skipped, and the provided map is directly resampled to MESE space and used for T2 fitting.
+When using custom B1+, all AFI processing is skipped (no AFI data required, no AFI denoising/GNLC, no AFI/EMC B1+ calculation). The provided map is resampled to MESE space and used for T2 fitting. B1+ values can be in percentage (0-200%) or unitless (0-2); automatic detection is applied during processing.
+
+**Gradient non-linearity correction (GNLC) of the custom B1+ map:** The `*B1map.json` usually does not state whether the B1+ map was calculated from GNL-corrected data. Therefore, the key `NonlinearGradientCorrection` is read from the corresponding `*B1ref.json`:
+
+| `NonlinearGradientCorrection` in `*B1ref.json` | Handling |
+|------|-------------|
+| `true` | B1+ map is used as is |
+| `false` | GNLC is applied to the B1+ map **without** jacobian intensity modulation (`--no-jacobian`) |
+| unknown (no `*B1ref.json` or key missing) | **Error**, the session is skipped. Use `-b1asis` to use the B1+ map as is. |
+
+##### B1+ Method without Custom B1+ Map
+
+Without `-b1`, the B1+ method is selected by the hard-coded variable `B1_METHOD` at the top of `t2_calc_b1corr_t2fit.py`:
+
+| `B1_METHOD` | 7T | 3T |
+|------|------|------|
+| `"AFI"` | AFI B1+ map only | AFI B1+ map only |
+| `"AFIregEMC"` (default) | AFI B1+ map regularized with the EMC B1+ estimate | EMC-only B1+ map |
 
 #### Examples
 
@@ -216,6 +235,7 @@ B1+ values can be in percentage (0-200%) or unitless (0-2); automatic detection 
   /data/bids_input \
   /data/derivatives/relax_R2
 ```
+(add `-b1asis` to skip the GNLC status check and use the B1+ maps as they are)
 
 **Preview Commands (Dry Run):**
 ```bash

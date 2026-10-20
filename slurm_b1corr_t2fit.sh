@@ -10,7 +10,7 @@
 #   The script processes the input MESE data to produce T2 maps with B1+ field inhomogeneity correction.
 #
 # USAGE:
-#   sbatch slurm_b1corr_t2fit.sh [--gpu=1] <CONTAINER_PATH> <SUBJECT> <SESSION> <MAGNETIC_FIELD> <INPUT_DIR> <WORK_DIR> <OUTPUT_DIR> <TR_RATIO> <FLIP_ANGLE> <DENOISE_DIR> [CUSTOM_B1_DIR]
+#   sbatch slurm_b1corr_t2fit.sh [--gpu=1] <CONTAINER_PATH> <SUBJECT> <SESSION> <MAGNETIC_FIELD> <INPUT_DIR> <WORK_DIR> <OUTPUT_DIR> <TR_RATIO> <FLIP_ANGLE> <DENOISE_DIR> [USE_CUSTOM_B1]
 #
 # ARGUMENTS:
 #   CONTAINER_PATH  - Path to Singularity container with PyMRItools, FSL, and ANTS
@@ -23,12 +23,13 @@
 #   TR_RATIO        - TR ratio (TR2/TR1) for AFI B1+ calculation (e.g., 5.0)
 #   FLIP_ANGLE      - Flip angle of AFI images in degrees (e.g., 55.0)
 #   DENOISE_DIR     - Path to directory containing denoised data
-#   CUSTOM_B1_DIR   - (optional) Path to BIDS-compatible directory containing custom B1+ maps
+#   USE_CUSTOM_B1   - (optional) 'true' to use the custom B1+ map (*_desc-undistorted_B1map.nii) from INPUT_DIR
+#                     instead of the AFI-based B1+ map (default: false)
 #
 # OPERATIONS PERFORMED:
-#   1. B1+ field mapping from AFI data
-#   2. B1+ mapping using the echo-modulation curve (EMC) approach
-#   3. B1+ field regularization
+#   1. B1+ field mapping from AFI data (or loading of the custom B1+ map)
+#   2. B1+ mapping using the echo-modulation curve (EMC) approach (depending on B1_METHOD in t2_calc_b1corr_t2fit.py)
+#   3. B1+ field regularization (depending on B1_METHOD in t2_calc_b1corr_t2fit.py)
 #   4. Dictionary-based T2 fitting with B1+ correction
 #   5. R2 map calculation from corrected T2 values
 #
@@ -63,7 +64,7 @@ OUTPUT_DIR="$7"
 TR_RATIO="$8"
 FLIP_ANGLE="$9"
 DENOISE_DIR="${10}"
-CUSTOM_B1_DIR="${11:-}"
+USE_CUSTOM_B1="${11:-false}"
 
 
 echo "--------"
@@ -77,9 +78,7 @@ echo "Output Directory: ${OUTPUT_DIR}"
 echo "TR Ratio: ${TR_RATIO}"
 echo "Flip Angle: ${FLIP_ANGLE}°"
 echo "Denoise Directory: ${DENOISE_DIR}"
-if [[ -n "${CUSTOM_B1_DIR}" ]]; then
-    echo "Custom B1 Directory: ${CUSTOM_B1_DIR}"
-fi
+echo "Use custom B1+ map: ${USE_CUSTOM_B1}"
 echo "--------"
 
 # this job requests using a GPU 
@@ -103,9 +102,9 @@ cmd_args=(
     "--denoise-dir" "${DENOISE_DIR}"
 )
 
-# Add custom B1 directory if provided
-if [[ -n "${CUSTOM_B1_DIR}" ]]; then
-    cmd_args+=("--use-custom-b1" "${CUSTOM_B1_DIR}")
+# Use custom B1+ map if requested
+if [[ "${USE_CUSTOM_B1}" == "true" ]]; then
+    cmd_args+=("--use-custom-b1")
 fi
 
 singularity exec "${CONTAINER_PATH}" "${cmd_args[@]}"

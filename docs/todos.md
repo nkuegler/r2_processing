@@ -19,7 +19,7 @@
 
 2. **Hard-coded paths** 
    - the following scripts contain hard coded variables -> solve by using relative paths and/or by using singularity container
-      - `t2_processing_main.sh`: gnlc_dir, gnlc_slurm_log_dir, --output (twice in the script and twice in the dynamic creation of the bridge jobs, which should go into a separate script anyway)
+      - `t2_processing_main.sh`: gnlc_dir, gnlc_slurm_log_dir, --output (twice in the script and twice in the dynamic creation of the bridge jobs, which should go into a separate script anyway), subdirectory and pattern for B1 map
       - `slurm_b1corr_t2fit.sh`: t2_script
       - `slurm_bridge_cleanup_final.sh`: --output
       - `slurm_denoise_nbc.sh`: t2_script

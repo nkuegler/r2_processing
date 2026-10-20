@@ -11,6 +11,7 @@ Functions:
 - load_nifti_as_tensor(): Load NIfTI file and return as PyTorch tensor
 - get_timestamp(): Get current timestamp in ISO format
 - copy_corresponding_json(): Copy JSON metadata files between directories
+- create_processing_json(): Create JSON metadata for processed T2/R2/B1+ maps
 - resample_3d_ants(): Resample 3D NIfTI file to match reference space using ANTS
 
 Author: Niklas Kuegler (kuegler@cbs.mpg.de)
@@ -168,9 +169,12 @@ def create_processing_json(json_dest, map_type, processing_info):
         - field_strength: Magnetic field strength in Tesla
         - tr_ratio: TR ratio for AFI (if applicable)
         - flip_angle: Flip angle for AFI in degrees (if applicable)
-        - input_files: Dict with 'mese' and 'afi' source files
+        - input_files: Dict with 'mese' and 'afi' (or 'b1_map') source files
         - processing_steps: List of processing steps performed
         - software_version: Software versions used
+        - B1_correction_method: Description of the B1+ correction/mapping method
+        - afi_used: Whether the AFI B1+ map contributes to the B1+ map (adds AFI parameters)
+        - B1mapGNLCHandling: (optional) GNLC handling of a custom B1+ map
         - timestamp: Processing timestamp
         
     Returns
@@ -194,26 +198,25 @@ def create_processing_json(json_dest, map_type, processing_info):
         metadata["ProcessingParameters"] = {
             "MagneticFieldStrength": processing_info.get("field_strength"),
             "T2FittingMethod": "Dictionary-based pattern matching",
-            "B1CorrectionMethod": f"AFI+EMC regularization (linear weighting between AFI B1+ and EMC B1+, up to {processing_info.get('B1_regularization_threshold')} % error in the AFI B1+ map)" if processing_info.get("field_strength") == 7.0 else "EMC-only (no AFI B1 map used)",
+            "B1CorrectionMethod": processing_info.get("B1_correction_method"),
             "DatabasePath": processing_info.get("database_path"),
             "GPUAcceleration": processing_info.get("gpu_used", False)
         }
-        
-        if processing_info.get("field_strength") == 7.0:
-            metadata["ProcessingParameters"]["AFI_TR_Ratio"] = processing_info.get("tr_ratio")
-            metadata["ProcessingParameters"]["AFI_FlipAngle"] = processing_info.get("flip_angle")
             
     elif map_type == "TB1map":
         metadata["ProcessingParameters"] = {
             "MagneticFieldStrength": processing_info.get("field_strength"),
-            "B1MappingMethod": f"AFI+EMC regularization (linear weighting between AFI B1+ and EMC B1+, up to {processing_info.get('regularization_threshold')} % error in the AFI B1+ map)" if processing_info.get("field_strength") == 7.0 else "EMC-only (no AFI B1 map used)",
-            "SmoothingKernel": processing_info.get("smoothing_kernel", 3),
-            "RegularizationThreshold": processing_info.get("regularization_threshold", 10.0)
+            "B1MappingMethod": processing_info.get("B1_correction_method"),
+            "SmoothingKernel": processing_info.get("B1_smoothing_kernel", 3),
+            "RegularizationThreshold": processing_info.get("B1_regularization_threshold", "N/A")
         }
-        
-        if processing_info.get("field_strength") == 7.0:
+
+    if map_type in ["T2map", "R2map", "TB1map"]:
+        if processing_info.get("afi_used", False):
             metadata["ProcessingParameters"]["AFI_TR_Ratio"] = processing_info.get("tr_ratio")
             metadata["ProcessingParameters"]["AFI_FlipAngle"] = processing_info.get("flip_angle")
+        if "B1mapGNLCHandling" in processing_info:
+            metadata["ProcessingParameters"]["B1mapGNLCHandling"] = processing_info["B1mapGNLCHandling"]
     
     # Write JSON file
     with open(json_dest, 'w') as f:
@@ -300,59 +303,3 @@ def resample_3d_ants(input_file, reference_file, output_file, description="", in
     
     return output_file
 
-
-def copy_custom_b1map_to_workdir(custom_b1_root_dir, subject, session, working_dir, custom_b1_subdir, custom_b1_pattern):
-    """
-    Load custom B1+ map from BIDS-compatible directory structure.
-    
-    Expected structure: custom_b1_root_dir/sub-xxx/ses-xx/anat/Supplementary/<custom_b1_pattern>
-    
-    Args:
-        custom_b1_root_dir: Root directory containing BIDS-structured custom B1 maps
-        subject: Subject identifier (e.g., 'sub-001')
-        session: Session identifier (e.g., 'ses-01')
-        working_dir: Working directory where to copy the B1 map
-        custom_b1_subdir: Subdirectory within the anat/ directory containing custom B1 maps
-        custom_b1_pattern: Filename pattern for custom B1 map (glob pattern)
-    Returns:
-        path_custom_b1: Path to the loaded custom B1 map in working directory
-        custom_b1_filename: Filename of the custom B1 map
-        
-    Raises:
-        FileNotFoundError: If no B1 map found matching the pattern
-    """
-    custom_b1_source_dir = plib.Path(custom_b1_root_dir) / subject / session / "anat" / custom_b1_subdir
-    
-    if not custom_b1_source_dir.exists():
-        raise FileNotFoundError(
-            f"Custom B1 map directory does not exist: {custom_b1_source_dir}\n"
-            f"Expected structure: {custom_b1_root_dir}/{subject}/{session}/anat/{custom_b1_subdir}/")
-    
-    # Find B1 map matching the pattern
-    b1_files = list(custom_b1_source_dir.glob(custom_b1_pattern))
-    
-    if not b1_files:
-        raise FileNotFoundError(
-            f"No B1 map files found in {custom_b1_source_dir} matching pattern '{custom_b1_pattern}'.\n"
-            f"Please check the directory and pattern.")
-    
-    if len(b1_files) > 1:
-        logging.warning(f"Multiple B1 map files found matching pattern '{custom_b1_pattern}'. Using the first one.")
-        logging.warning(f"Found files: {[f.name for f in b1_files]}")
-    
-    b1_source_file = b1_files[0]
-    custom_b1_filename = b1_source_file.stem  # filename without extension
-    
-    # Copy B1 map to working directory
-    b1_dest_file = working_dir / (b1_source_file.name)
-    shutil.copy2(b1_source_file, b1_dest_file)
-    logging.info(f"Copied custom B1 map to working directory: {b1_dest_file}")
-    
-    # Copy corresponding JSON sidecar if it exists
-    json_source = b1_source_file.with_suffix('.json')
-    if json_source.exists():
-        json_dest = b1_dest_file.with_suffix('.json')
-        shutil.copy2(json_source, json_dest)
-        logging.info(f"Copied corresponding JSON sidecar: {json_dest}")
-    
-    return b1_dest_file, custom_b1_filename

@@ -26,12 +26,13 @@ OPTIONAL ARGUMENTS:
     --work-dir, -w          Working directory for temporary files (default: output_dir/Supplementary/)
     --tr-ratio, -trr        TR ratio (TR2/TR1) for AFI B1+ calculation (default: 5.0)
     --flip-angle, -fa       Flip angle of AFI images in degrees (default: 55.0)
-    --use-custom-b1         Path to BIDS-compatible directory containing custom B1+ maps.
+    --use-custom-b1         Use the custom B1+ map (*_desc-undistorted_B1map.nii) from the input directory
+                            (prepared by slurm_bridge_gnlc_b1.sh) instead of the AFI-based B1+ map.
 
 OPERATIONS PERFORMED:
-    1. B1+ field mapping from actual flip angle (AFI) imaging
-    2. B1+ mapping using the echo-modulation curve (EMC) approach from MESE data
-    3. B1+ field regularization (AFI+EMC for 7T, EMC-only for 3T)
+    1. B1+ field mapping from actual flip angle (AFI) imaging (or loading of the custom B1+ map)
+    2. B1+ mapping using the echo-modulation curve (EMC) approach from MESE data (only B1_METHOD = "AFIregEMC")
+    3. B1+ field regularization (only B1_METHOD = "AFIregEMC": AFI+EMC for 7T, EMC-only for 3T)
     4. Dictionary-based T2 fitting with B1+ correction using pattern matching
     5. R2 map calculation from corrected T2 values
     6. SNR estimation and quality control metrics
@@ -40,14 +41,14 @@ EXAMPLE:
     python t2_calc_b1corr_t2fit.py \\
         --subject sub-001 --session ses-01 --field-strength 7 \\
         --input-dir /data/gnlc --output-dir /data/output \\
-        --use-custom-b1 /data/custom_b1 --denoise-dir /data/denoise --tr-ratio 5.0 --flip-angle 55.0
+        --denoise-dir /data/denoise --tr-ratio 5.0 --flip-angle 55.0
 
 NOTES:
-    - Requires PyMRItools (https://github.com/schmidt-jo/PyMRItools) checked out at the commit 335c40b
+    - Requires PyMRItools (https://github.com/schmidt-jo/PyMRItools) checked out at the commit c1b1568
     - Requires pre-computed dictionary databases specific for your sequences
-    - B1+ regularization strategy differs between field strengths:
-      * 7T: Combined AFI and EMC approach with error-based weighting
-      * 3T: EMC-only approach
+    - The B1+ method without custom B1+ map is set by the hard-coded B1_METHOD below:
+      * "AFI":       AFI B1+ map only (3T and 7T)
+      * "AFIregEMC": 7T: Combined AFI and EMC approach with error-based weighting; 3T: EMC-only approach
     - GPU acceleration automatically used if CUDA is available
     - Intermediate results saved in working directory for validation
     - Quality control plots saved as HTML files
@@ -89,15 +90,20 @@ import t2_calc_helper as helper
 ### setting data
 
 # ============================================================================
-# CONFIGURATION SETTINGS FOR CUSTOM B1 MAP
+# CONFIGURATION SETTINGS FOR B1+ CORRECTION
 # ============================================================================
-# Name of subdirectory within the anat/ directory containing custom B1 maps
-CUSTOM_B1_SUBDIR = "Supplementary"
-
-# Filename pattern for custom B1 map (glob pattern)
-CUSTOM_B1_PATTERN = "*stx*B1map.nii*"
+# B1+ method used when NO custom B1+ map is provided (--use-custom-b1 not set)
+#   "AFI"       : AFI B1+ map only (resampled to MESE space, smoothed), at 3T and 7T. EMC fitting is skipped.
+#   "AFIregEMC" : 7T -> AFI B1+ regularized with the EMC B1+ estimate (weighted by the AFI relative error, threshold 10 %)
+#                 3T -> EMC-only B1+ (AFI is computed for reference but not used)
+# (The settings for the custom B1+ map (subdirectory, filename pattern) are defined in t2_processing_main.sh)
+B1_METHOD = "AFIregEMC"
+VALID_B1_METHODS = ("AFI", "AFIregEMC")
 
 # ============================================================================
+
+if B1_METHOD not in VALID_B1_METHODS:
+    raise ValueError(f"Invalid B1_METHOD: {B1_METHOD}. Supported values are {VALID_B1_METHODS}.")
 
 # Parse command line arguments
 parser = argparse.ArgumentParser(description='T2 calculation with B1 correction')
@@ -119,8 +125,8 @@ parser.add_argument('--flip-angle', '-fa', type=float, default=55.0,
                     help='Flip angle of the AFI images in degrees (default: 55.0)')
 parser.add_argument('--denoise-dir', '-denDir', type=str, required=True,
                     help='Directory path containing denoised data')
-parser.add_argument('--use-custom-b1', type=str, required=False, default=None,
-                    help='Path to BIDS-compatible directory containing custom B1 maps (optional). Maps should follow structure: <path>/sub-xxx/ses-xx/anat/Supplementary/<filename_pattern>')
+parser.add_argument('--use-custom-b1', action='store_true',
+                    help='Use the custom B1+ map (*_desc-undistorted_B1map.nii) from the input directory instead of the AFI-based B1+ map')
 
 
 args = parser.parse_args()
@@ -131,8 +137,7 @@ sess = args.session
 magnetic_field = args.field_strength
 trRatio = args.tr_ratio
 fa = args.flip_angle
-use_custom_b1 = args.use_custom_b1 is not None
-custom_b1_dir = args.use_custom_b1
+use_custom_b1 = args.use_custom_b1
 
 # Define input directory
 input_dir = plib.Path(f"{args.input_dir}/{subj}/{sess}/anat/")
@@ -177,15 +182,15 @@ else:
 mese_suffix = "MESE"
 afi_suffix = "TB1AFI"
 b1_suffix = "TB1map"
+custom_b1_suffix = "B1map"
 r2_suffix = "R2map"
 t2_suffix = "T2map"
 
 ### B1+ CORRECTION
+b1_gauss_sigma = 2  # smoothing kernel for B1+ maps (in voxels)
+b1_gauss_sigma_emc = 4
 
 # reload gradient nonlinearity corrected images
-
-fname_afi_pattern = f"{subj}_{sess}*_desc-undistortedJac_{afi_suffix}.nii"
-afi_files = glob.glob(str(input_dir / fname_afi_pattern))
 
 fname_mese_pattern = f"{subj}_{sess}*_desc-undistortedJac_{mese_suffix}.nii"
 mese_files = glob.glob(str(input_dir / fname_mese_pattern))
@@ -214,22 +219,30 @@ if use_custom_b1:
     # ========================================================================
     print(f"Using custom B1+ map workflow", flush=True)
     
-    # Load custom B1 map
-    try:
-        path_custom_b1, custom_b1_filename = helper.copy_custom_b1map_to_workdir(
-            custom_b1_dir, subj, sess, working_dir, CUSTOM_B1_SUBDIR, CUSTOM_B1_PATTERN)
-        # custom_b1_data, custom_b1_img, custom_b1_aff, custom_b1_hdr, _ = \
-        #     helper.load_nifti_as_tensor(input_path=working_dir,
-        #                                filename=custom_b1_filename)
-    except FileNotFoundError as e:
-        logging.error(f"Failed to load custom B1 map: {e}")
-        raise
-    
-    logging.info(f"Copied custom B1 map to workdir: {path_custom_b1}")
+    # Load custom B1 map (prepared by slurm_bridge_gnlc_b1.sh: GNL-corrected without jacobian, or copied as is)
+    fname_custom_b1_pattern = f"*_desc-undistorted_{custom_b1_suffix}.nii"
+    custom_b1_files = sorted(glob.glob(str(input_dir / fname_custom_b1_pattern)))
+    if not custom_b1_files:
+        raise FileNotFoundError(f"No custom B1 map found matching pattern: {input_dir / fname_custom_b1_pattern}")
+    if len(custom_b1_files) > 1:
+        logging.warning(f"Multiple custom B1 maps found matching pattern: {fname_custom_b1_pattern}. Using the first one.")
+    path_custom_b1 = plib.Path(custom_b1_files[0])
+    custom_b1_filename = path_custom_b1.with_suffix('').name
+    logging.info(f"Custom B1 map: {path_custom_b1}")
+
+    # Read how the gradient nonlinearity correction of the custom B1 map was handled
+    custom_b1_json = path_custom_b1.with_suffix(".json")
+    custom_b1_gnlc_handling = "unknown"
+    if custom_b1_json.exists():
+        with open(custom_b1_json, 'r') as f:
+            custom_b1_gnlc_handling = json.load(f).get("B1mapGNLCHandling", "unknown")
+    else:
+        logging.warning(f"JSON sidecar of the custom B1 map not found: {custom_b1_json}")
+    logging.info(f"GNLC of the custom B1 map: {custom_b1_gnlc_handling}")
     
     # Resample custom B1 map to MESE space
     print("Resample custom B1 map to MESE space", flush=True)
-    fname_custom_b1_resampled = custom_b1_filename.replace(b1_suffix, f"proc-resampled_{b1_suffix}")
+    fname_custom_b1_resampled = custom_b1_filename.replace(f"_{custom_b1_suffix}", f"_proc-resampled_{custom_b1_suffix}")
     path_custom_b1_resampled = working_dir.joinpath(fname_custom_b1_resampled).with_suffix(".nii")
     
     helper.resample_3d_ants(
@@ -251,17 +264,9 @@ if use_custom_b1:
     if b1_max > 2.0:  # Likely in percentage
         b1_custom_re = b1_custom_re / 100
     
-    b1_reg = torch.from_numpy(gaussian_filter(b1_custom_re.numpy(), sigma=2))
+    b1_reg = torch.from_numpy(gaussian_filter(b1_custom_re.numpy(), sigma=b1_gauss_sigma))
     fname_b1_reg = f"{subj}_{sess}_proc-CustomB1_{b1_suffix}"
     description_text_b1reg = f"B1+ map from custom external B1+ map, resampled to MESE space, {helper.get_timestamp()}"
-    
-    # Save regularized B1 map
-    _ = helper.save_nifti(output_path=working_dir,
-                          filename=fname_b1_reg,
-                          data=b1_reg,
-                          affine=b1_custom_re_aff,
-                          header=b1_custom_re_hdr,
-                          description=description_text_b1reg)
     
     # Store references for later
     afi_gnlc = None
@@ -269,12 +274,13 @@ if use_custom_b1:
     b1_afi_re = None
     b1_afi_re_aff = b1_custom_re_aff
     b1_afi_re_hdr = b1_custom_re_hdr
-    custom_b1_used = True
     
 else:
     # ========================================================================
-    # STANDARD AFI + EMC B1 MAP WORKFLOW
+    # STANDARD AFI (+ EMC) B1 MAP WORKFLOW
     # ========================================================================
+    fname_afi_pattern = f"{subj}_{sess}*_desc-undistortedJac_{afi_suffix}.nii"
+    afi_files = glob.glob(str(input_dir / fname_afi_pattern))
     if not afi_files:
         raise FileNotFoundError(f"No AFI file found matching pattern: {fname_afi_pattern}")
     if len(afi_files) > 1:
@@ -377,8 +383,6 @@ else:
     b1_afi_re_rel_err, _, _, _, _ = \
         helper.load_nifti_as_tensor(input_path=working_dir,
                                     filename=fname_afib1err_resampled)
-    
-    custom_b1_used = False
 
     del descrip_array_afi
 
@@ -405,22 +409,26 @@ mese_data_normalized = torch.nan_to_num(
                  mese_data_norm), 
                  nan=0.0, posinf=0.0, neginf=0.0).contiguous()
 
+# Each workflow defines the B1+ map used as fixed input for the final T2 pattern matching:
+# b1_reg, fname_b1_reg, description_text_b1reg
 if use_custom_b1:
     # ========================================================================
-    # CUSTOM B1 WORKFLOW: Only perform T2 fitting with the custom B1 map
+    # CUSTOM B1 WORKFLOW: B1+ map prepared above (resampled and smoothed custom B1+ map)
     # ========================================================================
-    print("T2 pattern matching with custom B1+ map input", flush=True)
-    t2, b1_reg_fit, l2_min_err = r2_pattern_matching(
-        input_data=mese_data_normalized,
-        db_mag=db_torch_mag,
-        t2_vals=t2_vals, b1_vals=b1_vals, t1_vals=t1_vals, b1_data=b1_reg,
-        batch_size=2000,
-        device=torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"),
-    )
+    print("Using custom B1+ map as input for T2 pattern matching", flush=True)
 
-else:
+elif B1_METHOD == "AFI":
     # ========================================================================
-    # STANDARD WORKFLOW: First EMC, then AFI+EMC regularization, then T2 fitting
+    # AFI-ONLY WORKFLOW: Smoothed AFI B1+ map, no EMC fitting
+    # ========================================================================
+    print("Using AFI B1+ map (without EMC regularization) as input for T2 pattern matching", flush=True)
+    b1_reg = torch.from_numpy(gaussian_filter(b1_afi_re.numpy(), sigma=b1_gauss_sigma))
+    fname_b1_reg = f"{subj}_{sess}_proc-AFI_{b1_suffix}"
+    description_text_b1reg = f"B1+ map created from preprocessed AFI images (no EMC regularization), {helper.get_timestamp()}"
+
+elif B1_METHOD == "AFIregEMC":
+    # ========================================================================
+    # AFI+EMC WORKFLOW: First EMC (joint B1+/T2 fit), then AFI+EMC regularization (7T) or EMC-only (3T)
     # ========================================================================
     # We do a poor mans b1 regularization.
     # First run we extract the b1 map the pattern matching would optimize for without providing the afi input
@@ -433,7 +441,7 @@ else:
         device=torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"),
     )
 
-    b1_emc = torch.from_numpy(gaussian_filter(b1_emc.numpy(), sigma=5))
+    b1_emc = torch.from_numpy(gaussian_filter(b1_emc.numpy(), sigma=b1_gauss_sigma_emc))
 
     # we can save this for reference
     fname_b1_emc = f"{subj}_{sess}_proc-EMC_{b1_suffix}"
@@ -476,40 +484,41 @@ else:
         regularization_threshold = 10.0  # in percent
         regularization_factor = 1 - torch.clip(b1_afi_re_rel_err, 0, regularization_threshold) / regularization_threshold
         b1_reg = regularization_factor * b1_afi_re + (1 - regularization_factor) * b1_emc
-        b1_reg = torch.from_numpy(gaussian_filter(b1_reg.numpy(), sigma=2))
+        b1_reg = torch.from_numpy(gaussian_filter(b1_reg.numpy(), sigma=b1_gauss_sigma))
         fname_b1_reg = f"{subj}_{sess}_proc-AFIregEMC_{b1_suffix}"
         description_text_b1reg = f"B1+ map created from preprocessed AFI images regularized with EMC B1+ estimate, {helper.get_timestamp()}"
     elif magnetic_field == 3.0:
         # We know from experience that the EMC B1+ estimate is quite good for 3T data.
         # Therefore, we don't use the AFI B1+ estimate at all here.
         # TODO: This decision should be systematically evaluated and potentially adjusted.
-        b1_reg = torch.from_numpy(gaussian_filter(b1_emc.numpy(), sigma=2))
+        b1_reg = torch.from_numpy(gaussian_filter(b1_emc.numpy(), sigma=b1_gauss_sigma))
         fname_b1_reg = f"{subj}_{sess}_proc-EMC_{b1_suffix}"
         description_text_b1reg = f"B1+ map estimated using echo-modulation curve (EMC) approach, {helper.get_timestamp()}"
     else: 
         raise ValueError(f"Unsupported magnetic field strength: {magnetic_field}. Supported values are 3.0 and 7.0 Tesla.")
 
-    # we can save this for reference
-    # fname_b1_reg defined above
-    _ = helper.save_nifti(output_path=working_dir, 
-                          filename=fname_b1_reg, 
-                          data=b1_reg, 
-                          affine=b1_afi_re_aff, 
-                          header=b1_afi_re_hdr,
-                          description=description_text_b1reg)
-    ### > corresponding JSON file is created at the end of this script
+# we can save this for reference
+# fname_b1_reg defined above
+_ = helper.save_nifti(output_path=working_dir, 
+                      filename=fname_b1_reg, 
+                      data=b1_reg, 
+                      affine=b1_afi_re_aff, 
+                      header=b1_afi_re_hdr,
+                      description=description_text_b1reg)
+### > corresponding JSON file is created at the end of this script
 
-    # We now redo the fitting with inputting the b1 regularization. 
-    # This way the algorithm is not simultaneously optimizing 
-    # for t2 and b1 but only needs to match the pattern wrt t2.
-    print("Redo T2 pattern matching with regularized AFI B1 map input")
-    t2, b1_reg_fit, l2_min_err = r2_pattern_matching(
-        input_data=mese_data_normalized, 
-        db_mag=db_torch_mag, 
-        t2_vals=t2_vals, b1_vals=b1_vals, t1_vals=t1_vals, b1_data=b1_reg,
-        batch_size=2000, 
-        device=torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"),
-    )
+# (Re)do the fitting with the B1+ map as fixed input. 
+# This way the algorithm is not simultaneously optimizing 
+# for t2 and b1 but only needs to match the pattern wrt t2.
+# (For B1_METHOD = "AFIregEMC", this is the second run after the joint B1+/T2 fit of the EMC estimation.)
+print(f"T2 pattern matching with B1+ map input ({fname_b1_reg})", flush=True)
+t2, b1_reg_fit, l2_min_err = r2_pattern_matching(
+    input_data=mese_data_normalized, 
+    db_mag=db_torch_mag, 
+    t2_vals=t2_vals, b1_vals=b1_vals, t1_vals=t1_vals, b1_data=b1_reg,
+    batch_size=2000, 
+    device=torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"),
+)
 
 
 # want to get r2
@@ -541,60 +550,69 @@ print("Saving results")
 
 # Prepare processing information for JSON metadata
 if use_custom_b1:
-    processing_info = {
-        "subject": subj,
-        "session": sess,
-        "field_strength": magnetic_field,
-        "tr_ratio": trRatio,
-        "flip_angle": fa,
-        "input_files": {
-            "mese": fname_mese_undistorted,
-            "b1_map": "external/custom B1+ map"
-        },
-        "processing_steps": [
-            "Loading external custom B1+ map",
-            "Resampling custom B1+ map to MESE space",
-            "Dictionary-based T2 fitting with custom B1+ map",
-            "R2 map calculation from T2 values"
-        ],
-        "software_version": {
-            "PyMRItools": "commit 335c40b",
-            "processing_script": "t2_calc_b1corr_t2fit.py"
-        },
-        "database_path": str(path_db),
-        "gpu_used": torch.cuda.is_available(),
-        "B1_source": "external custom B1+ map",
-        "B1_smoothing_kernel": 2,
-        "timestamp": helper.get_timestamp()
-    }
+    b1_label = "custom B1+ correction"
+    b1_correction_method = f"External custom B1+ map (gradient nonlinearity correction: {custom_b1_gnlc_handling}), resampled to MESE space and smoothed"
+    b1_processing_steps = [
+        f"Loading external custom B1+ map (gradient nonlinearity correction: {custom_b1_gnlc_handling})",
+        "Resampling custom B1+ map to MESE space using linear interpolation",
+        "Spatial smoothing of resampled custom B1+ map"
+    ]
+elif B1_METHOD == "AFI":
+    b1_label = "AFI B1+ correction"
+    b1_correction_method = "AFI-only (AFI B1+ map resampled to MESE space and smoothed, no EMC regularization)"
+    b1_processing_steps = [
+        "B1+ field mapping from AFI data",
+        "Resampling AFI B1+ map to MESE space using linear interpolation",
+        "Spatial smoothing of resampled AFI B1+ map"
+    ]
+elif magnetic_field == 7.0:
+    b1_label = "AFI+EMC B1+ correction"
+    b1_correction_method = f"AFI+EMC regularization (linear weighting between AFI B1+ and EMC B1+, up to {regularization_threshold} % error in the AFI B1+ map)"
+    b1_processing_steps = [
+        "B1+ field mapping from AFI data",
+        "Echo-modulation curve (EMC) B1+ estimation from MESE data (joint B1+/T2 pattern matching)",
+        f"B1+ regularization ({b1_correction_method})",
+        "Spatial smoothing of regularized B1+ map"
+    ]
 else:
-    processing_info = {
-        "subject": subj,
-        "session": sess,
-        "field_strength": magnetic_field,
-        "tr_ratio": trRatio,
-        "flip_angle": fa,
-        "input_files": {
-            "mese": fname_mese_undistorted,
-            "afi": fname_afi_undistorted
-        },
-        "processing_steps": [
-            "B1+ field mapping from AFI data",
-            "Echo-modulation curve (EMC) B1+ estimation from MESE data",
-            f"B1+ regularization ({'AFI+EMC (linear weighting between AFI B1+ and EMC B1+, up to {regularization_threshold} % error in the AFI B1+ map)' if magnetic_field == 7.0 else 'EMC-only (no AFI B1 map used)'})",
-            "Dictionary-based T2 fitting with B1+ correction",
-            "R2 map calculation from T2 values"
-        ],
-        "software_version": {
-            "PyMRItools": "commit 335c40b",
-            "processing_script": "t2_calc_b1corr_t2fit.py"
-        },
-        "database_path": str(path_db),
-        "gpu_used": torch.cuda.is_available(),
-        "B1_smoothing_kernel": 3,
-        "B1_regularization_threshold": regularization_threshold if magnetic_field == 7.0 else "N/A",
-        "timestamp": helper.get_timestamp()
-    }
+    b1_label = "EMC B1+ correction"
+    b1_correction_method = "EMC-only (no AFI B1 map used)"
+    b1_processing_steps = [
+        "Echo-modulation curve (EMC) B1+ estimation from MESE data (joint B1+/T2 pattern matching)",
+        f"B1+ regularization ({b1_correction_method})",
+        "Spatial smoothing of EMC B1+ map"
+    ]
+
+processing_info = {
+    "subject": subj,
+    "session": sess,
+    "field_strength": magnetic_field,
+    "tr_ratio": trRatio,
+    "flip_angle": fa,
+    "input_files": {
+        "mese": fname_mese_undistorted,
+        **({"b1_map": custom_b1_filename} if use_custom_b1 else {"afi": fname_afi_undistorted})
+    },
+    "processing_steps": b1_processing_steps + [
+        "Dictionary-based T2 fitting with B1+ map as fixed input",
+        "R2 map calculation from T2 values"
+    ],
+    "software_version": {
+        "PyMRItools": "commit c1b1568",
+        "processing_script": "t2_calc_b1corr_t2fit.py"
+    },
+    "database_path": str(path_db),
+    "gpu_used": torch.cuda.is_available(),
+    "B1_method": "custom" if use_custom_b1 else B1_METHOD,
+    "B1_correction_method": b1_correction_method,
+    # AFI B1+ map contributes to the final B1+ map
+    "afi_used": not use_custom_b1 and (B1_METHOD == "AFI" or magnetic_field == 7.0),
+    "B1_smoothing_kernel": [b1_gauss_sigma, b1_gauss_sigma_emc] if (not use_custom_b1 and B1_METHOD == "AFIregEMC") else [b1_gauss_sigma],
+    "B1_regularization_threshold": regularization_threshold if (not use_custom_b1 and B1_METHOD == "AFIregEMC" and magnetic_field == 7.0) else "N/A",
+    "timestamp": helper.get_timestamp()
+}
+if use_custom_b1:
+    processing_info["B1mapGNLCHandling"] = custom_b1_gnlc_handling
 
 fname_r2 = f"{subj}_{sess}_{r2_suffix}"
 _ = helper.save_nifti(output_path=target_output_dir,
@@ -602,7 +620,7 @@ _ = helper.save_nifti(output_path=target_output_dir,
                       data=r2,
                       affine=mese_gnlc_aff,
                       header=mese_gnlc_hdr,
-                      description=f"R2 map from {fname_mese_undistorted}, AFI/EMC B1+ correction, {helper.get_timestamp()}")
+                      description=f"R2 map from {fname_mese_undistorted}, {b1_label}, {helper.get_timestamp()}")
 # Create processing JSON metadata
 json_dest = target_output_dir.joinpath(fname_r2).with_suffix(".json")
 helper.create_processing_json(json_dest, "R2map", processing_info)
@@ -614,7 +632,7 @@ _ = helper.save_nifti(output_path=target_output_dir,
                       data=t2,
                       affine=mese_gnlc_aff,
                       header=mese_gnlc_hdr,
-                      description=f"T2 map from {fname_mese_undistorted}, AFI/EMC B1+ correction, {helper.get_timestamp()}")
+                      description=f"T2 map from {fname_mese_undistorted}, {b1_label}, {helper.get_timestamp()}")
 # Create processing JSON metadata
 json_dest = target_output_dir.joinpath(fname_t2).with_suffix(".json")
 helper.create_processing_json(json_dest, "T2map", processing_info)
@@ -673,10 +691,13 @@ if not use_custom_b1:
     afi_b1_processing_info["input_files"] = {
         "afi": fname_afi_undistorted
     }
+    afi_b1_processing_info["B1_correction_method"] = "AFI-only"
+    afi_b1_processing_info["afi_used"] = True
     afi_b1_processing_info["B1_regularization_threshold"] = "n/a (AFI-only)"
     json_dest = working_dir.joinpath(fname_afib1).with_suffix(".json")
     helper.create_processing_json(json_dest, "TB1map", afi_b1_processing_info)
 
+if not use_custom_b1 and B1_METHOD == "AFIregEMC":
     # EMC R2 map JSON
     emc_processing_info = processing_info.copy()
     emc_processing_info["processing_steps"] = [
@@ -684,27 +705,14 @@ if not use_custom_b1:
         "Dictionary-based T2 fitting using EMC B1+ only (no AFI regularization)",
         "R2 map calculation from EMC-derived T2 values"
     ]
+    emc_processing_info["B1_correction_method"] = "EMC-only (joint B1+/T2 pattern matching)"
+    emc_processing_info["afi_used"] = False
     emc_processing_info["B1_regularization_threshold"] = "n/a (EMC-only)"
     json_dest = working_dir.joinpath(fname_r2_emc).with_suffix(".json")
     helper.create_processing_json(json_dest, "R2map", emc_processing_info)
 
-    # Regularized B1+ map JSON  
-    b1_reg_processing_info = processing_info.copy()
-    b1_reg_processing_info["processing_steps"] = [
-        "B1+ field mapping from AFI data",
-        "Echo-modulation curve (EMC) B1+ estimation from MESE data",
-        f"B1+ regularization ({'AFI+EMC (linear weighting between AFI B1+ and EMC B1+, up to {regularization_threshold} % error in the AFI B1+ map)' if magnetic_field == 7.0 else 'EMC-only (no AFI B1 map used)'})",
-        "Spatial smoothing of regularized B1+ map"
-    ]
-    json_dest = working_dir.joinpath(fname_b1_reg).with_suffix(".json")
-    helper.create_processing_json(json_dest, "TB1map", b1_reg_processing_info)
-else:
-    # Custom B1+ map JSON
-    custom_b1_processing_info = processing_info.copy()
-    custom_b1_processing_info["processing_steps"] = [
-        "Loading external custom B1+ map",
-        "Resampling custom B1+ map to MESE space using linear interpolation",
-        "Spatial smoothing of resampled custom B1+ map"
-    ]
-    json_dest = working_dir.joinpath(fname_b1_reg).with_suffix(".json")
-    helper.create_processing_json(json_dest, "TB1map", custom_b1_processing_info)
+# B1+ map used as input for the final T2 fitting (custom, AFI-only or regularized)
+b1_reg_processing_info = processing_info.copy()
+b1_reg_processing_info["processing_steps"] = b1_processing_steps
+json_dest = working_dir.joinpath(fname_b1_reg).with_suffix(".json")
+helper.create_processing_json(json_dest, "TB1map", b1_reg_processing_info)

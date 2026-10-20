@@ -11,7 +11,7 @@
 #   noise bias correction to improve signal quality for subsequent T2 fitting.
 #
 # USAGE:
-#   sbatch slurm_denoise_nbc.sh <CONTAINER_PATH> <SUBJECT> <SESSION> <MAGNETIC_FIELD> <PARENT_DIR> <OUTPUT_DIR> [NOISEMASK_DIR]
+#   sbatch slurm_denoise_nbc.sh <CONTAINER_PATH> <SUBJECT> <SESSION> <MAGNETIC_FIELD> <PARENT_DIR> <OUTPUT_DIR> [NOISEMASK_DIR] [SKIP_AFI]
 #
 # ARGUMENTS:
 #   CONTAINER_PATH  - Path to Singularity container with PyMRItools, FSL, and ANTS
@@ -20,7 +20,8 @@
 #   MAGNETIC_FIELD  - Magnetic field strength in Tesla (e.g., 7)
 #   PARENT_DIR      - Path to parent BIDS directory containing raw data
 #   OUTPUT_DIR      - Path to output directory for processed results
-#   NOISEMASK_DIR   - (Optional) Path to manual noise mask files (required for 3T)
+#   NOISEMASK_DIR   - (Optional) Path to manual noise mask files (required for 3T, may be "" if SKIP_AFI is given)
+#   SKIP_AFI        - (Optional) 'true' to skip loading/resampling of the AFI data (e.g., when using a custom B1+ map)
 #
 # OPERATIONS PERFORMED:
 #   1. LC-PCA denoising of MESE acquisitions
@@ -54,6 +55,7 @@ MAGNETIC_FIELD="$4"
 PARENT_DIR="$5"
 OUTPUT_DIR="$6"
 NOISEMASK_DIR="$7"  # Optional parameter
+SKIP_AFI="${8:-false}"  # Optional parameter
 
 
 echo "--------"
@@ -66,6 +68,7 @@ echo "Output Directory: ${OUTPUT_DIR}"
 if [[ -n "$NOISEMASK_DIR" ]]; then
     echo "Noise Mask Directory: ${NOISEMASK_DIR}"
 fi
+echo "Skip AFI: ${SKIP_AFI}"
 echo "--------"
 
 # # Build python command as array
@@ -84,6 +87,10 @@ if [[ -n "$NOISEMASK_DIR" ]]; then
     cmd_args+=("--noise-mask-dir" "${NOISEMASK_DIR}")
 fi
 
+# Skip AFI data if requested
+if [[ "$SKIP_AFI" == "true" ]]; then
+    cmd_args+=("--skip-afi")
+fi
 
 singularity exec "${CONTAINER_PATH}" "${cmd_args[@]}"
 

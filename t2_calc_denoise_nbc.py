@@ -25,10 +25,12 @@ REQUIRED ARGUMENTS:
 OPTIONAL ARGUMENTS:
     --noise-mask-dir, -noiseMaskdir  Directory containing manual noise mask files 
                                      (required for 3T data, not used for 7T)
+    --skip-afi                       Skip loading and resampling of the AFI data
+                                     (e.g., when a custom B1+ map is used)
 
 OPERATIONS PERFORMED:
-    1. Loading and concatenation of MESE and AFI acquisitions into 4D volumes
-    2. AFI resampling to MESE acquisition space using ANTs (for visualization only)
+    1. Loading and concatenation of MESE and AFI acquisitions into 4D volumes (AFI skipped with --skip-afi)
+    2. AFI resampling to MESE acquisition space using ANTs (for visualization only, skipped with --skip-afi)
     3. LC-PCA denoising of MESE acquisitions
     4. Noise mask extraction (automatic for 7T, must be drawn manually for 3T)
     5. Noise statistics calculation for bias correction parameters
@@ -48,7 +50,7 @@ EXAMPLE:
         --noise-mask-dir /masks/manual
 
 NOTES:
-    - Requires PyMRItools (https://github.com/schmidt-jo/PyMRItools) checked out at the commit 7d29483
+    - Requires PyMRItools (https://github.com/schmidt-jo/PyMRItools) checked out at the commit c1b1568
     - Automatic noise mask extraction using autodmri for 7T data
     - Manual noise masks required for 3T data (must NOT contain aliasing artifacts introduced by GRAPPA)
         - Noise mask format: binary NIfTI file matching MESE echo-01 dimensions
@@ -101,6 +103,8 @@ parser.add_argument('--output-dir', '-o', type=str, required=True,
                     help='Output directory path for final results (e.g., /data/pt_02262/data/TH_bids/bids/derivatives/relax_R2)')
 parser.add_argument('--noise-mask-dir', '-noiseMaskdir', type=str, required=False,
                     help='Directory path containing manually drawn noise mask files (required for 3T data, not used for other field strengths)')
+parser.add_argument('--skip-afi', action='store_true',
+                    help='Skip loading and resampling of the AFI data (e.g., when a custom B1+ map is used)')
 
 args = parser.parse_args()
 
@@ -108,6 +112,7 @@ args = parser.parse_args()
 subj = args.subject
 sess = args.session
 magnetic_field = float(args.field_strength)
+skip_afi = args.skip_afi
 
 # Validate that noise mask directory is provided for 3T data
 if magnetic_field == 3.0 and args.noise_mask_dir is None:
@@ -145,15 +150,18 @@ for f in files_t2:
 fname_mese_orig = files_t2[0].with_suffix('').stem
 
 # get afi files
-files_afi = sorted([f for f in afi_dir.iterdir() 
-                    if f.is_file() and 
-                    ".nii" in f.suffixes and 
-                    "stx" in f.stem and 
-                    f.stem.endswith(afi_suffix)])
-print(f"found afi files: ")
-for f in files_afi:
-    print(f"\t\t{f.name}")
-fname_afi_orig = files_afi[0].with_suffix('').stem
+if skip_afi:
+    print("Skipping AFI data (custom B1+ map is used)")
+else:
+    files_afi = sorted([f for f in afi_dir.iterdir() 
+                        if f.is_file() and 
+                        ".nii" in f.suffixes and 
+                        "stx" in f.stem and 
+                        f.stem.endswith(afi_suffix)])
+    print(f"found afi files: ")
+    for f in files_afi:
+        print(f"\t\t{f.name}")
+    fname_afi_orig = files_afi[0].with_suffix('').stem
 
 
 # want them to be in one 4D volume - could also do this prior via e.g. fslmerge -t
@@ -173,11 +181,12 @@ mese_4d = torch.movedim(mese_4d, 0, -1)
 nx, ny, nz, ne = mese_4d.shape
 
 # AFI
-afi_aff = nib.load(files_afi[0]).affine
-afi_hdr = nib.load(files_afi[0]).header
-afi_data = torch.from_numpy( \
-    np.array([nib.load(f).get_fdata() for f in files_afi]))
-afi_data = torch.movedim(afi_data, 0, -1)
+if not skip_afi:
+    afi_aff = nib.load(files_afi[0]).affine
+    afi_hdr = nib.load(files_afi[0]).header
+    afi_data = torch.from_numpy( \
+        np.array([nib.load(f).get_fdata() for f in files_afi]))
+    afi_data = torch.movedim(afi_data, 0, -1)
 
 
 # at this point we could save the combined volume if wanted
@@ -193,46 +202,47 @@ mese_json_source = t2_dir.joinpath(fname_mese_orig).with_suffix(".json")
 mese_json_dest = output_dir.joinpath(fname_mese_4d).with_suffix(".json")
 helper.copy_corresponding_json(mese_json_source, mese_json_dest)
 
-# For AFI, strip numbers from the acquisition entity and add 4D
-fname_afi_4d = f"{subj}_{sess}_acq-stx4D_{afi_suffix}"
-# fname_afi_4d = f"{subj}_{sess}_acq-stx4D_forMESE_{afi_suffix}"
-path_afi4d = helper.save_nifti(output_path=output_dir, 
-                             filename=fname_afi_4d, 
-                             data=afi_data, 
-                             affine=afi_aff,
-                             header=afi_hdr)
-# Copy the AFI JSON file
-afi_json_source = afi_dir.joinpath(fname_afi_orig).with_suffix(".json")
-afi_json_dest = output_dir.joinpath(fname_afi_4d).with_suffix(".json")
-helper.copy_corresponding_json(afi_json_source, afi_json_dest)
+if not skip_afi:
+    # For AFI, strip numbers from the acquisition entity and add 4D
+    fname_afi_4d = f"{subj}_{sess}_acq-stx4D_{afi_suffix}"
+    # fname_afi_4d = f"{subj}_{sess}_acq-stx4D_forMESE_{afi_suffix}"
+    path_afi4d = helper.save_nifti(output_path=output_dir, 
+                                 filename=fname_afi_4d, 
+                                 data=afi_data, 
+                                 affine=afi_aff,
+                                 header=afi_hdr)
+    # Copy the AFI JSON file
+    afi_json_source = afi_dir.joinpath(fname_afi_orig).with_suffix(".json")
+    afi_json_dest = output_dir.joinpath(fname_afi_4d).with_suffix(".json")
+    helper.copy_corresponding_json(afi_json_source, afi_json_dest)
 
-# resample the AFI data to the MESE space using a ANTS
-print("Resample AFI to MESE space")
-fname_afi_4d_resampled = fname_afi_4d.replace(afi_suffix, f"proc-resampled_{afi_suffix}")
-path_afi4d_resampled = output_dir.joinpath(fname_afi_4d_resampled).with_suffix(".nii")
-interpolation_mode = "Linear" # "Linear" # "NearestNeighbor" # "BSpline" # BSpline seems to cause issues
-script_dir = plib.Path(__file__).parent
-cmd = [
-    str(script_dir / "resample_4D.sh"),
-    str(path_afi4d),
-    str(path_mese4d),
-    str(path_afi4d_resampled),
-    interpolation_mode
-]
-os.system(" ".join(cmd))
+    # resample the AFI data to the MESE space using a ANTS
+    print("Resample AFI to MESE space")
+    fname_afi_4d_resampled = fname_afi_4d.replace(afi_suffix, f"proc-resampled_{afi_suffix}")
+    path_afi4d_resampled = output_dir.joinpath(fname_afi_4d_resampled).with_suffix(".nii")
+    interpolation_mode = "Linear" # "Linear" # "NearestNeighbor" # "BSpline" # BSpline seems to cause issues
+    script_dir = plib.Path(__file__).parent
+    cmd = [
+        str(script_dir / "resample_4D.sh"),
+        str(path_afi4d),
+        str(path_mese4d),
+        str(path_afi4d_resampled),
+        interpolation_mode
+    ]
+    os.system(" ".join(cmd))
 
-# reload resampled image
-afi_re_data, afi_re_img, _, _, _ = \
-    helper.load_nifti_as_tensor(input_path=output_dir, 
-                                filename=fname_afi_4d_resampled)
+    # reload resampled image
+    afi_re_data, afi_re_img, _, _, _ = \
+        helper.load_nifti_as_tensor(input_path=output_dir, 
+                                    filename=fname_afi_4d_resampled)
 
 
-# just a quick look for reference if needed
-plot_helper.plot_mese4d_afi4dRe(mese_4d, 
-                                afi_data,
-                                afi_re_data,
-                                path_figs=output_dir_vis,
-                                fig_title="mese_4d_mag_afi_4d_resampled",)
+    # just a quick look for reference if needed
+    plot_helper.plot_mese4d_afi4dRe(mese_4d, 
+                                    afi_data,
+                                    afi_re_data,
+                                    path_figs=output_dir_vis,
+                                    fig_title="mese_4d_mag_afi_4d_resampled",)
 
 ### DENOISING
 

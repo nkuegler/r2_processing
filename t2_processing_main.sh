@@ -22,7 +22,10 @@ OPTIONS:
     -b FIELD | --magnetic-field FIELD: magnetic field strength in Tesla (default: 7)
     -fa ANGLE | --flip-angle ANGLE: flip angle of the AFI acquisition in degrees (default: 55.0)
     -tr RATIO | --tr-ratio RATIO: TR ratio between the two AFI acquisitions (default: 5.0)
-    -b1 | --use-custom-b1: use custom B1+ map to the processing pipeline. This argument is supposed to be a path to a BIDS-compliant directory containing a subdirectory (default name: Supplementary) with the custom B1+ map (default: generated dynamically from AFI and EMC) 
+    -b1 DIR | --use-custom-b1 DIR: use custom B1+ map in the processing pipeline. This argument is supposed to be a path to a BIDS-compliant directory containing a subdirectory (default name: Supplementary) with the custom B1+ map (default: generated dynamically from AFI (and EMC)). All AFI processing is skipped and no AFI data is required.
+                                   The GNLC status of the B1+ map is read from the corresponding *B1ref.json (key NonlinearGradientCorrection):
+                                   true -> B1+ map is used as is; false -> GNLC (without jacobian) is applied to the B1+ map; unknown -> session is skipped.
+    -b1asis | --b1-use-as-is: use the custom B1+ map as is without checking its GNLC status (requires -b1)
     -w DIR | --work-dir DIR: working directory for intermediate files (default: output_directory/Supplementary). Three subdirectories will be created inside the working directory: denoise, gnlc, t2fit.
     -nmd | --noise-mask-dir DIR: directory containing noise masks (default: output_directory/manualNoiseMasks, only used for 3T data)
     -pw | --preserve-workdir: preserve working directories after processing (default: working directories are deleted)
@@ -39,12 +42,13 @@ DESCRIPTION:
     
     Sanity Checks before submitting jobs:
     - Verifies MESE files exist in the anat directory
-    - Verifies TB1AFI files exist in the corresponding fmap directory
+    - Verifies TB1AFI files exist in the corresponding fmap directory (not with -b1)
+    - With -b1: verifies a custom B1+ map exists and determines its GNLC status
     - Checks for existing processed files in working directory to avoid re-processing
     
     Processing pipeline:
     1. Denoising (Python) - runs first
-    2. Gradient non-linearity correction (bash) - depends on denoising job
+    2. Gradient non-linearity correction (bash) - MESE depends on denoising job; AFI (or custom B1+ map with -b1)
     3. T2 fitting (Python) - depends on gradient correction job
     
     If -sub is specified, only processes the specified subjects. If -ses is also specified,
@@ -66,6 +70,8 @@ EXAMPLES:
     $(basename $0) -cont /path/to/container.sif -sub \"sub-001,sub-002\" Prisma /data/input /data/output
     $(basename $0) -cont /path/to/container.sif -sub \"sub-001\" -ses \"ses-01,ses-02\" Terra /data/input /data/output
     $(basename $0) -cont /path/to/container.sif --dry-run -t 10 Prisma_fit /data/input /data/output
+    $(basename $0) -cont /path/to/container.sif -b1 /data/custom_b1 Terra /data/input /data/output
+    $(basename $0) -cont /path/to/container.sif -b1 /data/custom_b1 --b1-use-as-is Terra /data/input /data/output
 
 AUTHOR:
     Niklas Kuegler (kuegler@cbs.mpg.de)
@@ -88,6 +94,8 @@ tr_ratio=5.0
 container_path=""
 noise_mask_dir=""
 custom_b1_dir=""
+use_custom_b1=false
+b1_use_as_is=false
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -128,6 +136,10 @@ while [[ $# -gt 0 ]]; do
             custom_b1_dir="$2"
             use_custom_b1=true
             shift 2
+            ;;
+        -b1asis|--b1-use-as-is)
+            b1_use_as_is=true
+            shift
             ;;
         -w|--work-dir)
             work_dir="$2"
@@ -247,6 +259,12 @@ if [[ "$use_custom_b1" == "true" && ! -d "$custom_b1_dir" ]]; then
     exit 1
 fi
 
+if [[ "$b1_use_as_is" == "true" && "$use_custom_b1" != "true" ]]; then
+    echo "Error: -b1asis/--b1-use-as-is requires -b1/--use-custom-b1 to be specified"
+    usage
+    exit 1
+fi
+
 # Validate noise mask directory requirement for 3T data
 if [[ "$magnetic_field" == "3" || "$magnetic_field" == "3.0" ]]; then
     # Set default noise mask directory if not specified
@@ -287,6 +305,14 @@ fi
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 gnlc_dir="/data/u_kuegler_software/git/batch_gnlc/correct_MagOnly/"
 
+# Custom B1+ map settings (only used with -b1):
+# name of the subdirectory within the anat/ directory containing the custom B1+ maps
+custom_b1_subdir="Supplementary"
+# filename pattern of the custom B1+ map (find -name pattern)
+custom_b1_pattern="*stx*B1map.nii*"
+
+source "$script_dir/b1_gnlc_utils.sh"
+
 # Define paths to SLURM scripts
 denoise_script="$script_dir/slurm_denoise_nbc.sh"
 gnlc_script="$gnlc_dir/call_slurm_batch_magn.sh" # calls SLURM script
@@ -297,6 +323,7 @@ final_cleanup_script="$script_dir/slurm_cleanup_final.sh"
 # Define paths to SLURM bridge/intermediate scripts
 gnlc_mese_bridge_script="$script_dir/slurm_bridge_gnlc_mese.sh"
 gnlc_afi_bridge_script="$script_dir/slurm_bridge_gnlc_afi.sh"
+gnlc_b1_bridge_script="$script_dir/slurm_bridge_gnlc_b1.sh"
 final_cleanup_bridge_script="$script_dir/slurm_bridge_cleanup_final.sh"
 
 if [[ ! -f "$denoise_script" ]]; then
@@ -331,6 +358,11 @@ fi
 
 if [[ ! -f "$gnlc_afi_bridge_script" ]]; then
     echo "Error: GNLC AFI bridge SLURM script not found at $gnlc_afi_bridge_script"
+    exit 1
+fi
+
+if [[ ! -f "$gnlc_b1_bridge_script" ]]; then
+    echo "Error: GNLC B1 bridge SLURM script not found at $gnlc_b1_bridge_script"
     exit 1
 fi
 
@@ -396,6 +428,11 @@ echo "  Scanner: $scanner_name"
 echo "  Magnetic field: ${magnetic_field}T"
 echo "  Flip angle: ${flip_angle}°"
 echo "  TR ratio: ${tr_ratio}"
+if [[ "$use_custom_b1" == "true" ]]; then
+    echo "  B1+ source: custom B1+ map from $custom_b1_dir ($(if [[ "$b1_use_as_is" == "true" ]]; then echo "used as is, GNLC status not checked"; else echo "GNLC status checked via *B1ref.json"; fi))"
+else
+    echo "  B1+ source: AFI (method set by B1_METHOD in t2_calc_b1corr_t2fit.py)"
+fi
 if [[ -n "$noise_mask_dir" ]]; then
     echo "  Noise mask directory: $noise_mask_dir"
 fi
@@ -459,6 +496,7 @@ skipped_sessions=0
 declare -A denoise_job_ids
 declare -A gnlc_job_ids
 declare -A t2fit_job_ids
+declare -A t2fit_bridge_job_ids
 session_cleanup_bridge_job_ids=()
 
 # Cycle through each anat directory and submit SLURM jobs
@@ -481,17 +519,65 @@ for anat_path in "${anat_dirs[@]}"; do
             continue
         fi
 
-        # Check for TB1AFI files in fmap directory (case-insensitive)
-        fmap_path="${anat_path%/anat}/fmap"
-        afi_files=$(find "$fmap_path" -maxdepth 1 -iname "*tb1afi*" -type f 2>/dev/null | wc -l)
-        if [[ $afi_files -eq 0 ]]; then
-            echo "  No TB1AFI files found in $fmap_path"
-            echo "  Skipping this session."
-            ((skipped_sessions++))
-            ((job_counter++))
-            continue
+        if [[ "$use_custom_b1" != "true" ]]; then
+            # Check for TB1AFI files in fmap directory (case-insensitive)
+            fmap_path="${anat_path%/anat}/fmap"
+            afi_files=$(find "$fmap_path" -maxdepth 1 -iname "*tb1afi*" -type f 2>/dev/null | wc -l)
+            if [[ $afi_files -eq 0 ]]; then
+                echo "  No TB1AFI files found in $fmap_path"
+                echo "  Skipping this session."
+                ((skipped_sessions++))
+                ((job_counter++))
+                continue
+            fi
+        else
+            # Check for the custom B1+ map and determine how to handle its GNLC
+            custom_b1_session_dir="$custom_b1_dir/$subject/$session/anat/$custom_b1_subdir"
+            b1map_files=()
+            while IFS= read -r -d '' f; do
+                b1map_files+=("$f")
+            done < <(find "$custom_b1_session_dir" -maxdepth 1 -type f -name "$custom_b1_pattern" -print0 2>/dev/null | sort -z)
+            if [[ ${#b1map_files[@]} -eq 0 ]]; then
+                echo "  No custom B1+ map matching '$custom_b1_pattern' found in $custom_b1_session_dir"
+                echo "  Skipping this session."
+                ((skipped_sessions++))
+                ((job_counter++))
+                continue
+            fi
+            if [[ ${#b1map_files[@]} -gt 1 ]]; then
+                echo "  Warning: Multiple custom B1+ maps found matching '$custom_b1_pattern'. Using the first one."
+                printf "    %s\n" "${b1map_files[@]}"
+            fi
+            b1map_file="${b1map_files[0]}"
+            echo "  Custom B1+ map: $b1map_file"
+
+            if [[ "$b1_use_as_is" == "true" ]]; then
+                b1_mode="asis"
+                echo "  B1+ map is used as is (GNLC status not checked)"
+            else
+                b1_gnlc=$(b1_gnlc_status "$b1map_file")
+                case "$b1_gnlc" in
+                    true)
+                        b1_mode="precorrected"
+                        echo "  B1+ map was calculated from GNL-corrected data -> no GNLC of the B1+ map"
+                        ;;
+                    false)
+                        b1_mode="gnlc"
+                        echo "  B1+ map was calculated from data NOT corrected for gradient nonlinearities -> GNLC (without jacobian correction) of the B1+ map"
+                        ;;
+                    *)
+                        echo "  ERROR: Could not determine whether the custom B1+ map was calculated from GNL-corrected data"
+                        echo "         (no *B1ref.json with the key NonlinearGradientCorrection found next to $b1map_file)."
+                        echo "         Use -b1asis/--b1-use-as-is to use the B1+ map as is."
+                        echo "  Skipping this session."
+                        ((skipped_sessions++))
+                        ((job_counter++))
+                        continue
+                        ;;
+                esac
+            fi
         fi
-        
+
         # Check for existing .nii files in working directory structure
         existing_files=$(find "$working_dir"/*/"$subject"/"$session"/anat -maxdepth 1 -name "*.nii*" 2>/dev/null | wc -l)
         if [[ $existing_files -gt 0 ]]; then
@@ -533,7 +619,10 @@ for anat_path in "${anat_dirs[@]}"; do
         
         denoise_cmd="sbatch -p short,group_servers,gr_weiskopf \"$denoise_script\" \"$container_path\" \"$subject\" \"$session\" \"$magnetic_field\" \"$parent_dir\" \"$output_dir_denoise\""
         # Add noise mask directory as last argument if specified (only relevant for 3T data)
-        if [[ -n "$noise_mask_dir" ]]; then
+        # With a custom B1+ map, the AFI data is skipped in the denoising (SKIP_AFI as 8th argument, noise mask directory may be empty)
+        if [[ "$use_custom_b1" == "true" ]]; then
+            denoise_cmd="$denoise_cmd \"$noise_mask_dir\" \"true\""
+        elif [[ -n "$noise_mask_dir" ]]; then
             denoise_cmd="$denoise_cmd \"$noise_mask_dir\""
         fi
 
@@ -574,12 +663,21 @@ for anat_path in "${anat_dirs[@]}"; do
         file_pattern_afi="AFI" # has to be chosen like this to avoid the resampled AFI to be included
         
         output_dir_gnlc="$working_dir/gnlc"
+        # T2 fitting working directory (also used as staging directory for the custom B1+ map)
+        working_dir_t2fit="$working_dir/t2fit"
 
         # Generate unique job IDs for GNLC jobs
         timestamp=$(date +%s)
         random_suffix=$((RANDOM % 10000))
         mese_gnlc_job_name="gnlc_mese_${session_id}_${timestamp}_${random_suffix}"
-        afi_gnlc_job_name="gnlc_afi_${session_id}_${timestamp}_$((random_suffix + 1))"
+        # GNLC job of the B1+ source: AFI data or custom B1+ map
+        if [[ "$use_custom_b1" == "true" ]]; then
+            b1src_label="B1map"
+            b1src_gnlc_job_name="gnlc_b1_${session_id}_${timestamp}_$((random_suffix + 1))"
+        else
+            b1src_label="AFI"
+            b1src_gnlc_job_name="gnlc_afi_${session_id}_${timestamp}_$((random_suffix + 1))"
+        fi
         
         # Define GNLC commands with predetermined job IDs
         # input and output directories are the working directory
@@ -587,7 +685,9 @@ for anat_path in "${anat_dirs[@]}"; do
 
         # container is currently not used in the GNLC script
         gnlc_cmd_mese="bash $gnlc_script -c $contrast_mese -p $file_pattern_mese -sub $subject -ses $session -job-name $mese_gnlc_job_name -log "$gnlc_slurm_log_dir/gnlc_mese_" $scanner_name $output_dir_denoise $output_dir_gnlc" # -container $container_path
-        gnlc_cmd_afi="bash $gnlc_script -c $contrast_afi -p $file_pattern_afi -sub $subject -ses $session -job-name $afi_gnlc_job_name -log "$gnlc_slurm_log_dir/gnlc_afi_" $scanner_name $output_dir_denoise $output_dir_gnlc" # -container $container_path
+        gnlc_cmd_afi="bash $gnlc_script -c $contrast_afi -p $file_pattern_afi -sub $subject -ses $session -job-name $b1src_gnlc_job_name -log "$gnlc_slurm_log_dir/gnlc_afi_" $scanner_name $output_dir_denoise $output_dir_gnlc" # -container $container_path
+        # arguments of the custom B1+ map bridge (GNLC without jacobian, or copy if no GNLC is needed)
+        gnlc_b1_bridge_args=("$gnlc_script" "$b1_mode" "$b1map_file" "$subject" "$session" "$working_dir_t2fit" "$output_dir_gnlc" "$scanner_name" "$b1src_gnlc_job_name" "$gnlc_slurm_log_dir/gnlc_b1_")
 
         if [[ "$dry_run" == "false" ]]; then
             
@@ -607,21 +707,35 @@ for anat_path in "${anat_dirs[@]}"; do
             echo "    $bridge_mese_gnlc_out"
             echo "    MESE GNLC will use custom job name: $mese_gnlc_job_name"
             
-            # ============================================================
-            # INTERMEDIATE JOB FOR AFI GNLC
-            # ============================================================
-            echo "    Submitting intermediate job for AFI GNLC ..."
-            
-            # Submit bridge job
-            bridge_afi_out=$(sbatch -p short,group_servers,gr_weiskopf \
-                --dependency=afterok:${denoise_job_id} \
-                --job-name=bridge_afi_${session_id} \
-                --output=/data/u_kuegler_software/git/r2_processing/logs/denoise/%j_bridge_afi_${session_id}.out \
-                "$gnlc_afi_bridge_script" \
-                "$gnlc_cmd_afi" "$subject" "$session" "$output_dir_denoise" "$output_dir_gnlc" "$afi_gnlc_job_name")
+            if [[ "$use_custom_b1" == "true" ]]; then
+                # ============================================================
+                # INTERMEDIATE JOB FOR CUSTOM B1+ MAP GNLC
+                # ============================================================
+                echo "    Submitting intermediate job for custom B1+ map GNLC (mode: $b1_mode) ..."
 
-            echo "    $bridge_afi_out"
-            echo "    AFI GNLC will use custom job name: $afi_gnlc_job_name"
+                # Submit bridge job (no dependency: the custom B1+ map does not depend on the denoising)
+                bridge_b1src_out=$(sbatch -p short,group_servers,gr_weiskopf \
+                    --job-name=bridge_b1_${session_id} \
+                    --output=/data/u_kuegler_software/git/r2_processing/logs/denoise/%j_bridge_b1_${session_id}.out \
+                    "$gnlc_b1_bridge_script" \
+                    "${gnlc_b1_bridge_args[@]}")
+            else
+                # ============================================================
+                # INTERMEDIATE JOB FOR AFI GNLC
+                # ============================================================
+                echo "    Submitting intermediate job for AFI GNLC ..."
+                
+                # Submit bridge job
+                bridge_b1src_out=$(sbatch -p short,group_servers,gr_weiskopf \
+                    --dependency=afterok:${denoise_job_id} \
+                    --job-name=bridge_afi_${session_id} \
+                    --output=/data/u_kuegler_software/git/r2_processing/logs/denoise/%j_bridge_afi_${session_id}.out \
+                    "$gnlc_afi_bridge_script" \
+                    "$gnlc_cmd_afi" "$subject" "$session" "$output_dir_denoise" "$output_dir_gnlc" "$b1src_gnlc_job_name")
+            fi
+
+            echo "    $bridge_b1src_out"
+            echo "    $b1src_label GNLC will use custom job name: $b1src_gnlc_job_name"
 
             # Store bridge job IDs for this session (to track bridge job completion)
             gnlc_bridge_job_ids=()
@@ -632,25 +746,30 @@ for anat_path in "${anat_dirs[@]}"; do
                 gnlc_bridge_job_ids+=("$bridge_mese_id")
             fi
             
-            if [[ $bridge_afi_out =~ Submitted\ batch\ job\ ([0-9]+) ]]; then
-                bridge_afi_id="${BASH_REMATCH[1]}"
-                gnlc_bridge_job_ids+=("$bridge_afi_id")
+            if [[ $bridge_b1src_out =~ Submitted\ batch\ job\ ([0-9]+) ]]; then
+                bridge_b1src_id="${BASH_REMATCH[1]}"
+                gnlc_bridge_job_ids+=("$bridge_b1src_id")
             fi
             
-            echo "    Bridge job IDs: ${gnlc_bridge_job_ids[*]} (will trigger GNLC jobs: $mese_gnlc_job_name, $afi_gnlc_job_name)"
+            echo "    Bridge job IDs: ${gnlc_bridge_job_ids[*]} (will trigger GNLC jobs: $mese_gnlc_job_name, $b1src_gnlc_job_name)"
             
             # Store for T2 fitting dependency
-            gnlc_job_ids[$session_id]="${mese_gnlc_job_name},${afi_gnlc_job_name}"
+            gnlc_job_ids[$session_id]="${mese_gnlc_job_name},${b1src_gnlc_job_name}"
         else
             echo "    DRY RUN: Would generate GNLC job names:"
             echo "      MESE GNLC Job name: $mese_gnlc_job_name"
-            echo "      AFI GNLC Job name: $afi_gnlc_job_name"
+            echo "      $b1src_label GNLC Job name: $b1src_gnlc_job_name"
             echo "    DRY RUN: Would submit bridge jobs with commands:"
             echo "      MESE: $gnlc_cmd_mese"
-            echo "      AFI: $gnlc_cmd_afi"
-            echo "    DRY RUN: Bridge jobs would depend on successful denoising job: $denoise_job_id"
-            gnlc_job_ids[$session_id]="${mese_gnlc_job_name},${afi_gnlc_job_name}"
-            gnlc_bridge_job_ids=("DRY_RUN_BRIDGE_MESE_ID" "DRY_RUN_BRIDGE_AFI_ID")
+            if [[ "$use_custom_b1" == "true" ]]; then
+                echo "      B1map: $gnlc_b1_bridge_script ${gnlc_b1_bridge_args[*]}"
+                echo "    DRY RUN: MESE bridge job would depend on successful denoising job: $denoise_job_id (B1map bridge job without dependency)"
+            else
+                echo "      AFI: $gnlc_cmd_afi"
+                echo "    DRY RUN: Bridge jobs would depend on successful denoising job: $denoise_job_id"
+            fi
+            gnlc_job_ids[$session_id]="${mese_gnlc_job_name},${b1src_gnlc_job_name}"
+            gnlc_bridge_job_ids=("DRY_RUN_BRIDGE_MESE_ID" "DRY_RUN_BRIDGE_${b1src_label^^}_ID")
         fi 
 
         
@@ -662,7 +781,6 @@ for anat_path in "${anat_dirs[@]}"; do
         # takes input from output_dir_gnlc (and one file from output_dir_denoise)
         # uses working dir: working_dir_t2fit
         # outputs results to output_dir
-        working_dir_t2fit="$working_dir/t2fit"
 
         # Generate unique job name for T2 fitting job
         t2fit_job_name="t2fit_${session_id}_${timestamp}"
@@ -721,23 +839,23 @@ get_job_id_by_name() {
 
 # Get actual job IDs
 mese_gnlc_job_id=\$(get_job_id_by_name "$mese_gnlc_job_name")
-afi_gnlc_job_id=\$(get_job_id_by_name "$afi_gnlc_job_name")
+b1src_gnlc_job_id=\$(get_job_id_by_name "$b1src_gnlc_job_name")
 
-if [[ -z "\$mese_gnlc_job_id" || -z "\$afi_gnlc_job_id" ]]; then
+if [[ -z "\$mese_gnlc_job_id" || -z "\$b1src_gnlc_job_id" ]]; then
     echo "Error: Could not extract GNLC job IDs"
     echo "MESE GNLC job ID: \$mese_gnlc_job_id"
-    echo "AFI GNLC job ID: \$afi_gnlc_job_id"
+    echo "$b1src_label GNLC job ID: \$b1src_gnlc_job_id"
     exit 1
 fi
 
 echo "Successfully extracted GNLC job IDs:"
 echo "MESE GNLC job ID: \$mese_gnlc_job_id"
-echo "AFI GNLC job ID: \$afi_gnlc_job_id"
+echo "$b1src_label GNLC job ID: \$b1src_gnlc_job_id"
 
 # Submit T2 fitting job with dependency on actual GNLC job IDs
-t2fit_dependency="--dependency=afterok:\${mese_gnlc_job_id}:\${afi_gnlc_job_id}"
-if [[ -n "$custom_b1_dir" && "$use_custom_b1" == "true" ]]; then
-    t2fit_cmd="sbatch -p short,group_servers,gr_weiskopf \${t2fit_dependency} --gpus=1 --job-name=$t2fit_job_name \"$t2fit_script\" \"$container_path\" \"$subject\" \"$session\" \"$magnetic_field\" \"$output_dir_gnlc\" \"$working_dir_t2fit\" \"$output_dir\" \"$tr_ratio\" \"$flip_angle\" \"$output_dir_denoise\" \"$custom_b1_dir\""
+t2fit_dependency="--dependency=afterok:\${mese_gnlc_job_id}:\${b1src_gnlc_job_id}"
+if [[ "$use_custom_b1" == "true" ]]; then
+    t2fit_cmd="sbatch -p short,group_servers,gr_weiskopf \${t2fit_dependency} --gpus=1 --job-name=$t2fit_job_name \"$t2fit_script\" \"$container_path\" \"$subject\" \"$session\" \"$magnetic_field\" \"$output_dir_gnlc\" \"$working_dir_t2fit\" \"$output_dir\" \"$tr_ratio\" \"$flip_angle\" \"$output_dir_denoise\" \"true\""
 else
     t2fit_cmd="sbatch -p short,group_servers,gr_weiskopf \${t2fit_dependency} --gpus=1 --job-name=$t2fit_job_name \"$t2fit_script\" \"$container_path\" \"$subject\" \"$session\" \"$magnetic_field\" \"$output_dir_gnlc\" \"$working_dir_t2fit\" \"$output_dir\" \"$tr_ratio\" \"$flip_angle\" \"$output_dir_denoise\""
 fi
@@ -751,7 +869,7 @@ t2fit_out=\$(eval \$t2fit_cmd)
 # Extract and log T2 fitting job ID
 if [[ \$t2fit_out =~ Submitted\ batch\ job\ ([0-9]+) ]]; then
     t2fit_job_id="\${BASH_REMATCH[1]}"
-    echo "T2 fitting job ID: \$t2fit_job_id (job name: $t2fit_job_name, depends on GNLC jobs: \$mese_gnlc_job_id, \$afi_gnlc_job_id)"
+    echo "T2 fitting job ID: \$t2fit_job_id (job name: $t2fit_job_name, depends on GNLC jobs: \$mese_gnlc_job_id, \$b1src_gnlc_job_id)"
     # echo "T2FIT_JOB_ID=\$t2fit_job_id" >> "$job_id_file"
 else
     echo "Error: Could not extract T2 fitting job ID from sbatch output"
@@ -766,8 +884,6 @@ EOF
             echo "    Submitting T2 fitting bridge job..."
             t2fit_bridge_out=$(sbatch -p short,group_servers,gr_weiskopf "$t2fit_bridge_script" "$t2fit_job_name")
             echo "    $t2fit_bridge_out"
-            
-            declare -A t2fit_bridge_job_ids
 
             if [[ $t2fit_bridge_out =~ Submitted\ batch\ job\ ([0-9]+) ]]; then
                 t2fit_bridge_id="${BASH_REMATCH[1]}"
@@ -784,7 +900,7 @@ EOF
             echo "    DRY RUN: Would create T2 fitting bridge job that:"
             echo "      - Depends on bridge jobs: ${gnlc_bridge_job_ids[*]}"
             echo "      - Waits 10 seconds for GNLC jobs to start"
-            echo "      - Extracts actual job IDs for: $mese_gnlc_job_name, $afi_gnlc_job_name"
+            echo "      - Extracts actual job IDs for: $mese_gnlc_job_name, $b1src_gnlc_job_name"
             echo "      - Submits T2 fitting job with dependency on extracted GNLC job IDs"
             t2fit_bridge_job_ids[$session_id]="DRY_RUN_T2FIT_BRIDGE_JOB_ID"
         fi

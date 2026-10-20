@@ -2,7 +2,7 @@
 
 This page describes the T2 processing pipeline for Multi-Echo Spin-Echo (MESE) MRI data. The pipeline uses **PyMRItools (by Jochen Schmidt)** to calculate R2 and T2 maps from MESE data with B1+ field inhomogeneity correction.
 
-> **PyMRItools** is a Python package for processing quantitative MRI data. This pipeline requires PyMRItools checked out at commit `7d29483`.<br>
+> **PyMRItools** is a Python package for processing quantitative MRI data. This pipeline requires PyMRItools checked out at commit `c1b1568`.<br>
 > For more information on PyMRItools, please refer to the [GitHub repository](https://github.com/schmidt-jo/PyMRItools).<br>
 
 The scripts that are described on this page are part of the **r2_processing** repository. The main processing script `t2_processing_main.sh` orchestrates the entire pipeline by submitting SLURM jobs for automated batch processing of BIDS-structured MRI data.
@@ -60,7 +60,7 @@ The pipeline is designed for both **3T** and **7T** data, with field-strength-sp
 
 The provided singularity container contains a full working environment with all necessary binaries for running the scripts in this repository (batch_gnlc repository is still needed and the GNLC step does not run inside the container yet). \
 **If you are planning to avoid the container**, you need to set set up an environment containing the following software tools and packages (and adjust the code in several locations):
-- **PyMRItools** - Checked out at commit `7d29483`
+- **PyMRItools** - Checked out at commit `c1b1568`
   - GitHub: [schmidt-jo/PyMRItools](https://github.com/schmidt-jo/PyMRItools)
 - **FSL** - For image processing utilities
 - **ANTs** - For image registration and resampling
@@ -81,7 +81,7 @@ The provided singularity container contains a full working environment with all 
   │   │   ├── anat/
   │   │   │   └── *_MESE.nii[.gz]  (Multi-echo spin-echo data)
   │   │   └── fmap/
-  │   │       └── *_TB1AFI.nii[.gz]  (Actual flip angle imaging data)
+  │   │       └── *_TB1AFI.nii[.gz]  (Actual flip angle imaging data, not required with -b1)
   ```
 
 - **Pre-computed Dictionary Databases** - Sequence-specific simulation databases for pattern matching
@@ -123,10 +123,10 @@ Build the Singularity container:
 
 ```bash
 # With root access:
-sudo singularity build pymritools.sif pymritools_singularity.def
+sudo singularity build pymritools_c1b1568.sif pymritools_singularity_c1b1568.def
 
 # Without root (using fakeroot):
-singularity build --fakeroot pymritools.sif pymritools_singularity.def
+singularity build --fakeroot pymritools_c1b1568.sif pymritools_singularity_c1b1568.def
 ```
 
 After building, move the container to your desired location:
@@ -140,7 +140,7 @@ The container includes:
 - Miniforge3 (minimal Conda distribution)
 - Conda environment "mri_tools_env" with all dependencies
 - PyTorch with ROCm 6.2.4 GPU support
-- PyMRItools (commit `335c40b`)
+- PyMRItools (commit `c1b1568`)
 - Additional packages: triton, autodmri, twixtools, pypulseq
 - Additional software: FSL, ANTs
 
@@ -241,9 +241,14 @@ Before submitting the jobs for processing each session, the main script (`t2_pro
    - Searches for files matching the pattern `*mese*` in the `anat/` directory (case-insensitive comparison)
    - Requirement: At least one MESE file must be present. Otherwise the session is skipped.
 
-2. **TB1AFI File Detection**
+2. **TB1AFI File Detection** (without `-b1`)
    - Searches for files matching the pattern `*tb1afi*` in the corresponding `fmap/` directory (case-insensitive comparison)
    - Requirement: At least one TB1AFI file must be present. Otherwise the session is skipped.
+
+   **Custom B1+ Map Detection** (with `-b1`, replaces the TB1AFI check)
+   - Searches for files matching `custom_b1_pattern` in `custom_b1_dir/<subject>/<session>/anat/<custom_b1_subdir>/`
+   - Requirement: At least one B1+ map must be present. Otherwise the session is skipped.
+   - Determines the GNLC status of the B1+ map from the corresponding `*B1ref.json` (`b1_gnlc_utils.sh`). If it cannot be determined (and `-b1asis` is not set), the session is skipped with an error.
 
 3. **Existing Results Check**
    - Scans the working directory for previously processed files
@@ -271,6 +276,11 @@ Denoise Job (SLURM Job ID: 12345)
             └──> Bridge AFI GNLC (submits AFI GNLC)
                     │
                     └──> AFI GNLC Job (custom name: gnlc_afi_...)
+
+    With -b1, the AFI GNLC bridge is replaced by (no dependency on the denoise job):
+    Bridge B1map GNLC (stages the custom B1+ map, then GNLC without jacobian or copy)
+            │
+            └──> B1map GNLC Job or placeholder job (custom name: gnlc_b1_...)
     │
     └──> Bridge Job for T2 Fit (depends on both GNLC bridge jobs)
             │
@@ -350,7 +360,8 @@ The main entry point is `t2_processing_main.sh`, which automatically discovers a
 | `-ses SESSIONS`<br>`--sessions SESSIONS` | Comma-separated list of sessions to process<br>(e.g., `ses-01,ses-02`)<br>**Requires `-sub` to be specified** | All sessions |
 | `-w DIR`<br>`--work-dir DIR` | Working directory for intermediate files | `output_dir/Supplementary` |
 | `-nmd DIR`<br>`--noise-mask-dir DIR` | Directory containing manual noise masks<br>**Required for 3T data** | `output_dir/manualNoiseMasks` |
-| `-b1 DIR`<br>`--use-custom-b1 DIR` | **Optional:** Path to BIDS-compatible directory with custom B1+ maps<br>Uses external B1+ instead of AFI+EMC approach | Standard AFI+EMC workflow |
+| `-b1 DIR`<br>`--use-custom-b1 DIR` | **Optional:** Path to BIDS-compatible directory with custom B1+ maps<br>Uses external B1+ instead of the AFI-based approach (no AFI data required) | AFI-based workflow (see `B1_METHOD`) |
+| `-b1asis`<br>`--b1-use-as-is` | **Optional:** Use the custom B1+ map as is, without checking its GNLC status<br>**Requires `-b1` to be specified** | GNLC status checked via `*B1ref.json` |
 | `-pw`<br>`--preserve-workdir` | Preserve working directories after processing<br>(skip cleanup) | Cleanup enabled |
 | `--dry-run` | Show commands without executing | Execute jobs |
 | `-h`<br>`--help` | Display help message and exit | - |
@@ -422,15 +433,21 @@ The custom B1+ directory should follow this structure:
 │   └── ses-01/
 │       └── anat/
 │           └── Supplementary/
-│               └── *stx*B1map.nii[.gz]
+│               ├── *stx*B1map.nii[.gz]
+│               ├── *stx*B1map.json (optional)
+│               └── *stx*B1ref.json
 ├── sub-002/
 │   └── ses-01/
 │       └── anat/
 │           └── Supplementary/
-│               └── *stx*B1map.nii[.gz]
+│               ├── *stx*B1map.nii[.gz]
+│               ├── *stx*B1map.json (optional)
+│               └── *stx*B1ref.json
 ```
 
-The name of the subdirectory (e.g., "Supplementary") and the B1+ map pattern to search for (e.g., "*stx*B1map.nii") can be adjusted in the `t2_calc_b1corr_t2fit.py` script.
+The name of the subdirectory (e.g., "Supplementary") and the B1+ map pattern to search for (e.g., "*stx*B1map.nii*") can be adjusted at the top of the `t2_processing_main.sh` script.
+
+The GNLC status of the B1+ map is read from the key `NonlinearGradientCorrection` in the corresponding `*B1ref.json` (see [Custom B1+ Map Workflow](#custom-b1-map-workflow-when--b1-flag-specified)). If it cannot be determined, the session is skipped with an error. To use the B1+ maps as they are without this check, add `-b1asis`.
 
 #### Custom Working Directory with Preservation
 
@@ -508,8 +525,8 @@ The name of the subdirectory (e.g., "Supplementary") and the B1+ map pattern to 
 | `*_acq-semc4D_MESE.nii` | Concatenated 4D MESE volume |
 | `*_proc-denoised_MESE.nii` | LC-PCA denoised MESE data |
 | `*_proc-denoisedNbc_MESE.nii` | Denoised + noise bias corrected MESE |
-| `*_acq-stx4D_TB1AFI.nii` | Concatenated 4D AFI volume |
-| `*_proc-resampled_TB1AFI.nii` | AFI resampled to MESE space |
+| `*_acq-stx4D_TB1AFI.nii` | Concatenated 4D AFI volume (not with `-b1`) |
+| `*_proc-resampled_TB1AFI.nii` | AFI resampled to MESE space (not with `-b1`) |
 | `*_MESE_noiseMask.nii` | Noise mask (automatic or manual) |
 | `*_mese_noise_stats.json` | Noise statistics for downstream use |
 | `figs/*.html` | Quality control visualization plots |
@@ -538,7 +555,7 @@ For my 3T data, the `autodmri` approach (`pymritools.processing.denoising.extrac
 
 ### Stage 2: Gradient Non-linearity Correction
 
-**Script:** `slurm_bridge_gnlc_mese.sh` / `slurm_bridge_gnlc_afi.sh` → External GNLC script 
+**Script:** `slurm_bridge_gnlc_mese.sh` / `slurm_bridge_gnlc_afi.sh` (or `slurm_bridge_gnlc_b1.sh` with `-b1`) → External GNLC script 
 
 **Requirement:** 
 - clone **[batch_gnlc repository](https://github.com/nkuegler/batch_gnlc/)** and all its dependencies
@@ -559,6 +576,12 @@ For my 3T data, the `autodmri` approach (`pymritools.processing.denoising.extrac
    - MESE GNLC: Delayed by 60 seconds to avoid file conflicts
    - AFI GNLC: Starts immediately after denoising
    - Both write to same temporary directory sequentially
+   - Custom B1+ map GNLC (with `-b1`): Starts immediately (independent of the denoising); the B1+ map is staged in the t2fit working directory, so it does not interfere with the MESE GNLC
+
+4. **Custom B1+ Map (with `-b1`)**
+   - `NonlinearGradientCorrection: false` in `*B1ref.json`: GNLC **without** jacobian modulation (`--no-jacobian`, quantitative map)
+   - `NonlinearGradientCorrection: true` in `*B1ref.json`, or `-b1asis`: B1+ map is copied without GNLC (placeholder job keeps the dependency chain intact)
+   - The handling is documented in the key `B1mapGNLCHandling` of the B1+ map JSON sidecar and the final JSON metadata
 
 #### Processing Notes
 
@@ -573,6 +596,7 @@ For my 3T data, the `autodmri` approach (`pymritools.processing.denoising.extrac
 |------|-------------|
 | `*_desc-undistortedJac_MESE.nii` | GNLC-corrected MESE with Jacobian modulation |
 | `*_desc-undistortedJac_TB1AFI.nii` | GNLC-corrected AFI with Jacobian modulation |
+| `*_desc-undistorted_B1map.nii` | Custom B1+ map (with `-b1`), GNLC-corrected without Jacobian modulation or copied as is |
 
 ---
 
@@ -589,10 +613,12 @@ The B1+ correction strategy depends on whether custom B1+ maps are provided:
 ##### Custom B1+ Map Workflow (when `-b1` flag specified)
 
 1. **Custom B1+ Map Loading**
-   - Locates B1+ map in BIDS-compatible directory structure
-   - Expected path: `custom_b1_dir/sub-XXX/ses-YY/anat/Supplementary/*stx*B1map.nii*`
-   - Copies map and optional JSON sidecar to working directory
+   - Located by `t2_processing_main.sh` in the BIDS-compatible directory structure
+   - Expected path: `custom_b1_dir/sub-XXX/ses-YY/anat/Supplementary/*stx*B1map.nii*` (adjustable via `custom_b1_subdir` and `custom_b1_pattern` in `t2_processing_main.sh`)
+   - Staged (with JSON sidecars) to the working directory and GNL-corrected if necessary (see [Stage 2](#stage-2-gradient-non-linearity-correction))
+   - Loads `*_desc-undistorted_B1map.nii` from the GNLC output directory
    - Automatically detects and handles both percentage (0-200%) and unitless (0-2) representations
+   - No AFI data is processed in any stage of the pipeline
 
 2. **B1+ Map Resampling**
    - Resamples custom B1+ map to MESE acquisition space using ANTs
@@ -609,20 +635,27 @@ The B1+ correction strategy depends on whether custom B1+ maps are provided:
    - Pattern matching optimizes only for T2 values
    - Faster processing compared to standard approach (skips AFI calculation and EMC fitting)
 
-##### Standard AFI + EMC Workflow (default, when `-b1` flag not specified)
+##### Standard AFI-based Workflow (default, when `-b1` flag not specified)
+
+The B1+ method is selected by the hard-coded variable `B1_METHOD` at the top of `t2_calc_b1corr_t2fit.py`:
+
+| `B1_METHOD` | 7T | 3T | Pattern matching runs |
+|------|------|------|------|
+| `"AFI"` | AFI B1+ map only (steps 1, 4–6) | AFI B1+ map only (steps 1, 4–6) | 1 (T2 only, B1+ fixed) |
+| `"AFIregEMC"` (default) | AFI B1+ regularized with EMC B1+ (steps 1–6) | EMC-only B1+ (steps 1–6) | 2 (joint B1+/T2 for EMC, then T2 only with B1+ fixed) |
 
 1. **B1+ Mapping from AFI**
    - Calculates actual flip angle from dual-TR AFI acquisition
    - Applies spatial smoothing (kernel size: 3)
    - Computes relative error map using noise statistics
 
-2. **B1+ Mapping from EMC (Echo-Modulation Curve)**
-   - Performs initial T2 fitting without B1+ regularization
+2. **B1+ Mapping from EMC (Echo-Modulation Curve)** (only `"AFIregEMC"`)
+   - Performs initial T2 fitting without B1+ regularization (joint B1+/T2 pattern matching)
    - Extracts B1+ estimate from signal evolution pattern
    - Applies Gaussian smoothing ($\sigma = 5$ voxels)
    - Independent of AFI data
 
-3. **B1+ Regularization**
+3. **B1+ Regularization** (only `"AFIregEMC"`; with `"AFI"`, the resampled AFI B1+ map is smoothed with $\sigma = 2$ voxels instead)
    - **7T Strategy:** AFI + EMC weighted combination
      - Uses AFI relative error map as weighting factor
      - Threshold: 10% relative error
@@ -668,18 +701,20 @@ For **Custom B1+ Workflow:**
 
 | File | Description |
 |------|-------------|
+| `*_B1map.nii` + `.json` (+ `*_B1ref.json`) | Staged copy of the custom B1+ map (GNLC input) |
+| `*_proc-resampled_B1map.nii` | Custom B1+ map resampled to MESE space |
 | `*_proc-CustomB1_TB1map.nii` | Custom B1+ map resampled and smoothed to MESE space |
 | `mese_data_reg_snr.nii` | Estimated SNR map |
 | `mese_data_reg_snr_thr.nii` | Thresholded SNR map (< 5) |
 | `figs/*.html` | Quality control visualizations |
 
-For **Standard AFI + EMC Workflow:**
+For **Standard AFI-based Workflow:**
 
 | File | Description |
 |------|-------------|
-| `*_proc-AFIregEMC_TB1map.nii` (7T)<br>`*_proc-EMC_TB1map.nii` (3T) | Final regularized B1+ map |
-| `*_proc-EMC_TB1map.nii` | B1+ from EMC only |
-| `*_proc-EMC_R2map.nii` | R2 from EMC-only fitting |
+| `*_proc-AFI_TB1map.nii` (`"AFI"`)<br>`*_proc-AFIregEMC_TB1map.nii` (`"AFIregEMC"`, 7T)<br>`*_proc-EMC_TB1map.nii` (`"AFIregEMC"`, 3T) | Final B1+ map used for T2 fitting |
+| `*_proc-EMC_TB1map.nii` | B1+ from EMC only (only `"AFIregEMC"`) |
+| `*_proc-EMC_R2map.nii` | R2 from EMC-only fitting (only `"AFIregEMC"`) |
 | `*_TB1map_rel_err.nii` | AFI B1+ relative error (%) |
 | `*_proc-resampled_TB1map.nii` | AFI B1+ resampled to MESE space |
 | `mese_data_reg_snr.nii` | Estimated SNR map |
@@ -839,7 +874,7 @@ output_directory/
     │       └── ses-YY/
     │           └── anat/
     │               ├── *_desc-undistortedJac_MESE.nii
-    │               └── *_desc-undistortedJac_TB1AFI.nii
+    │               └── *_desc-undistortedJac_TB1AFI.nii (or *_desc-undistorted_B1map.nii with -b1)
     ├── t2fit/
     │   └── sub-XXX/
     │       └── ses-YY/
@@ -865,6 +900,7 @@ output_directory/
 | File | Type | Description |
 |------|------|-------------|
 | `t2_processing_main.sh` | Bash | Main orchestration script; submits all jobs with dependencies |
+| `b1_gnlc_utils.sh` | Bash | Determines the GNLC status of a custom B1+ map from its `*B1ref.json` (sourced by the main script) |
 | `slurm_denoise_nbc.sh` | Bash/SLURM | SLURM wrapper for denoising stage |
 | `slurm_b1corr_t2fit.sh` | Bash/SLURM | SLURM wrapper for B1+ correction and T2 fitting stage |
 | `slurm_cleanup_session.sh` | Bash/SLURM | Session-specific cleanup script |
@@ -887,9 +923,18 @@ output_directory/
 |------|------|-------------|
 | `slurm_bridge_gnlc_mese.sh` | Bash/SLURM | Bridge for MESE GNLC job submission |
 | `slurm_bridge_gnlc_afi.sh` | Bash/SLURM | Bridge for AFI GNLC job submission |
+| `slurm_bridge_gnlc_b1.sh` | Bash/SLURM | Bridge for custom B1+ map staging and GNLC (without jacobian) job submission |
 | `slurm_bridge_cleanup_final.sh` | Bash/SLURM | Bridge for final cleanup coordination |
 
 **Note:** T2 fitting bridge job and session cleanup bridge jobs are currently dynamically created in `t2_processing_main.sh` (TBA).
+
+### Tests
+
+A minimal `pytest` suite in `tests/` covers the GNLC status check of custom B1+ maps (`b1_gnlc_utils.sh`) and the custom B1+ map bridge (`slurm_bridge_gnlc_b1.sh`, with stubbed `sbatch` and GNLC script). Run it from the repository root (requires `jq`):
+
+```bash
+pytest
+```
 
 ### Utility Scripts
 
