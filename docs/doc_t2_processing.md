@@ -277,7 +277,7 @@ Denoise Job (SLURM Job ID: 12345)
                     │
                     └──> AFI GNLC Job (custom name: gnlc_afi_...)
 
-    With -b1, the AFI GNLC bridge is replaced by (no dependency on the denoise job):
+    With -b1, the AFI GNLC bridge is replaced by (also depends on Job 12345):
     Bridge B1map GNLC (stages the custom B1+ map, then GNLC without jacobian or copy)
             │
             └──> B1map GNLC Job or placeholder job (custom name: gnlc_b1_...)

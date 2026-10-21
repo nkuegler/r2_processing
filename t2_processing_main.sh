@@ -713,8 +713,10 @@ for anat_path in "${anat_dirs[@]}"; do
                 # ============================================================
                 echo "    Submitting intermediate job for custom B1+ map GNLC (mode: $b1_mode) ..."
 
-                # Submit bridge job (no dependency: the custom B1+ map does not depend on the denoising)
+                # Submit bridge job after the denoising (like the MESE/AFI GNLC bridges), so that the
+                # B1map GNLC job is still in the queue when the T2 fit bridge looks it up by name
                 bridge_b1src_out=$(sbatch -p short,group_servers,gr_weiskopf \
+                    --dependency=afterok:${denoise_job_id} \
                     --job-name=bridge_b1_${session_id} \
                     --output=/data/u_kuegler_software/git/r2_processing/logs/denoise/%j_bridge_b1_${session_id}.out \
                     "$gnlc_b1_bridge_script" \
@@ -763,7 +765,7 @@ for anat_path in "${anat_dirs[@]}"; do
             echo "      MESE: $gnlc_cmd_mese"
             if [[ "$use_custom_b1" == "true" ]]; then
                 echo "      B1map: $gnlc_b1_bridge_script ${gnlc_b1_bridge_args[*]}"
-                echo "    DRY RUN: MESE bridge job would depend on successful denoising job: $denoise_job_id (B1map bridge job without dependency)"
+                echo "    DRY RUN: MESE bridge job would depend on successful denoising job: $denoise_job_id (also the B1map bridge job)"
             else
                 echo "      AFI: $gnlc_cmd_afi"
                 echo "    DRY RUN: Bridge jobs would depend on successful denoising job: $denoise_job_id"
