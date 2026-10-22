@@ -186,8 +186,13 @@ When using custom B1+, all AFI processing is skipped (no AFI data required, no A
 | `NonlinearGradientCorrection` in `*B1ref.json` | Handling |
 |------|-------------|
 | `true` | B1+ map is used as is |
-| `false` | GNLC is applied to the B1+ map **without** jacobian intensity modulation (`--no-jacobian`) |
+| `false` | GNLC is applied to the B1+ map **without** jacobian intensity modulation (`--no-jacobian`), if the B1+ map is in scanner anatomical coordinates (see below) |
 | unknown (no `*B1ref.json` or key missing) | **Error**, the session is skipped. Use `-b1asis` to use the B1+ map as is. |
+
+**Scanner anatomical coordinates required for GNLC:** The distortion field is defined relative to the gradient isocenter in scanner coordinates. If the affine matrix of the B1+ map includes a coregistration rotation or translation, the correction is applied at the wrong physical positions. Therefore, a B1+ map that needs GNLC must have `qform_code`/`sform_code` 1 (scanner anat) in its NIfTI header; otherwise the session is skipped with an error. B1+ maps from the hMRI toolbox (SPM) are set to code 2 (aligned anat), which is valid because the AFI images are coregistered to the structural images. Options:
+1. If the B1+ map has the same affine matrix as the original AFI images, set `qform_code` and `sform_code` to 1 (e.g., `fslorient -setqformcode 1 <B1map.nii>` and `fslorient -setsformcode 1 <B1map.nii>`) and run again (the error message also provides a nibabel alternative).
+2. Use `-b1asis`. The B1+ map is not corrected for gradient nonlinearities (depending on the system small to considerable deviations, mainly in the periphery, very small effect near the isocenter).
+3. Gold standard: Correct the AFI images for gradient nonlinearities before the "Create hMRI maps" step of the hMRI toolbox (where the B1+ map is calculated) and feed the corrected images into the toolbox processing.
 
 ##### B1+ Method without Custom B1+ Map
 

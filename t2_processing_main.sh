@@ -25,6 +25,8 @@ OPTIONS:
     -b1 DIR | --use-custom-b1 DIR: use custom B1+ map in the processing pipeline. This argument is supposed to be a path to a BIDS-compliant directory containing a subdirectory (default name: Supplementary) with the custom B1+ map (default: generated dynamically from AFI (and EMC)). All AFI processing is skipped and no AFI data is required.
                                    The GNLC status of the B1+ map is read from the corresponding *B1ref.json (key NonlinearGradientCorrection):
                                    true -> B1+ map is used as is; false -> GNLC (without jacobian) is applied to the B1+ map; unknown -> session is skipped.
+                                   GNLC requires the B1+ map to be in scanner anatomical coordinates (qform_code/sform_code = 1 in the NIfTI header),
+                                   otherwise the session is skipped (e.g., hMRI toolbox B1+ maps have code 2 = aligned anat due to the coregistration).
     -b1asis | --b1-use-as-is: use the custom B1+ map as is without checking its GNLC status (requires -b1)
     -w DIR | --work-dir DIR: working directory for intermediate files (default: output_directory/Supplementary). Three subdirectories will be created inside the working directory: denoise, gnlc, t2fit.
     -nmd | --noise-mask-dir DIR: directory containing noise masks (default: output_directory/manualNoiseMasks, only used for 3T data)
@@ -491,6 +493,8 @@ fi
 job_counter=1
 total_sessions=${#anat_dirs[@]}
 skipped_sessions=0
+# custom B1+ maps skipped because they need GNLC but are not in scanner anatomical coordinates
+b1_not_scanner_anat_maps=()
 
 # Array to track job IDs for dependencies
 declare -A denoise_job_ids
@@ -562,8 +566,19 @@ for anat_path in "${anat_dirs[@]}"; do
                         echo "      B1+ map was calculated from GNL-corrected data -> no GNLC of the B1+ map"
                         ;;
                     false)
+                        echo "      B1+ map was calculated from data NOT corrected for gradient nonlinearities -> GNLC of the B1+ map required"
+                        # GNLC is only valid in scanner anatomical coordinates (see b1_gnlc_utils.sh)
+                        b1_scanner_anat=$(b1_scanner_anat_status "$b1map_file")
+                        if [[ "$b1_scanner_anat" != "true" ]]; then
+                            echo "      ERROR: Orientation mismatch: B1+ map is not in scanner anatomical coordinates (full explanation at the end of the output)."
+                            b1_not_scanner_anat_maps+=("$b1map_file")
+                            echo "  Skipping this session."
+                            ((skipped_sessions++))
+                            ((job_counter++))
+                            continue
+                        fi
                         b1_mode="gnlc"
-                        echo "      B1+ map was calculated from data NOT corrected for gradient nonlinearities -> GNLC (without jacobian correction) of the B1+ map"
+                        echo "      B1+ map is in scanner anatomical coordinates -> GNLC (without jacobian correction) of the B1+ map"
                         ;;
                     *)
                         echo "      ERROR: Could not determine whether the custom B1+ map was calculated from GNL-corrected data"
@@ -1109,3 +1124,10 @@ else
     echo "This was a dry run - no jobs were actually submitted"
 fi
 echo "=========================================="
+
+# Full explanation for custom B1+ maps skipped due to an orientation mismatch (printed once)
+if [[ ${#b1_not_scanner_anat_maps[@]} -gt 0 ]]; then
+    echo
+    b1_print_not_scanner_anat_error "${b1_not_scanner_anat_maps[@]}"
+    echo "=========================================="
+fi

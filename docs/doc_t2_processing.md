@@ -249,6 +249,7 @@ Before submitting the jobs for processing each session, the main script (`t2_pro
    - Searches for files matching `custom_b1_pattern` in `custom_b1_dir/<subject>/<session>/anat/<custom_b1_subdir>/`
    - Requirement: At least one B1+ map must be present. Otherwise the session is skipped.
    - Determines the GNLC status of the B1+ map from the corresponding `*B1ref.json` (`b1_gnlc_utils.sh`). If it cannot be determined (and `-b1asis` is not set), the session is skipped with an error.
+   - If the B1+ map needs GNLC (`NonlinearGradientCorrection: false`), its NIfTI header must have `qform_code`/`sform_code` 1 (scanner anat). Otherwise, the session is skipped with a one-line error; the full explanation with the options is printed once at the end of the output for all affected B1+ maps (see [Stage 2: Gradient Non-linearity Correction](#stage-2-gradient-non-linearity-correction)).
 
 3. **Existing Results Check**
    - Scans the working directory for previously processed files
@@ -447,7 +448,7 @@ The custom B1+ directory should follow this structure:
 
 The name of the subdirectory (e.g., "Supplementary") and the B1+ map pattern to search for (e.g., "*stx*B1map.nii*") can be adjusted at the top of the `t2_processing_main.sh` script.
 
-The GNLC status of the B1+ map is read from the key `NonlinearGradientCorrection` in the corresponding `*B1ref.json` (see [Custom B1+ Map Workflow](#custom-b1-map-workflow-when--b1-flag-specified)). If it cannot be determined, the session is skipped with an error. To use the B1+ maps as they are without this check, add `-b1asis`.
+The GNLC status of the B1+ map is read from the key `NonlinearGradientCorrection` in the corresponding `*B1ref.json` (see [Custom B1+ Map Workflow](#custom-b1-map-workflow-when--b1-flag-specified)). If it cannot be determined, the session is skipped with an error. A B1+ map that needs GNLC must be in scanner anatomical coordinates (`qform_code`/`sform_code` 1); otherwise, the session is skipped with an error (see [Stage 2](#stage-2-gradient-non-linearity-correction) for the options). To use the B1+ maps as they are without these checks, add `-b1asis`.
 
 #### Custom Working Directory with Preservation
 
@@ -580,6 +581,10 @@ For my 3T data, the `autodmri` approach (`pymritools.processing.denoising.extrac
 
 4. **Custom B1+ Map (with `-b1`)**
    - `NonlinearGradientCorrection: false` in `*B1ref.json`: GNLC **without** jacobian modulation (`--no-jacobian`, quantitative map)
+   - GNLC is only applied if the B1+ map is in scanner anatomical coordinates (`qform_code`/`sform_code` 1). The distortion field is defined relative to the gradient isocenter in scanner coordinates; if the affine matrix includes a coregistration rotation or translation, the correction is applied at the wrong physical positions. B1+ maps from the hMRI toolbox (SPM) usually have code 2 (aligned anat), because the AFI images are coregistered to the structural images. Such sessions are skipped with an error. Options:
+     1. If the B1+ map has the same affine matrix as the original AFI images, set `qform_code` and `sform_code` to 1 (e.g., `fslorient -setqformcode 1 <B1map.nii>` and `fslorient -setsformcode 1 <B1map.nii>`, a nibabel alternative is given in the error message) and run again.
+     2. Use `-b1asis`: the B1+ map is not corrected for gradient nonlinearities (depending on the system small to considerable deviations, mainly in the periphery, very small effect near the isocenter).
+     3. Gold standard: Correct the AFI images for gradient nonlinearities before the "Create hMRI maps" step of the hMRI toolbox (where the B1+ map is calculated) and feed the corrected images into the toolbox processing.
    - `NonlinearGradientCorrection: true` in `*B1ref.json`, or `-b1asis`: B1+ map is copied without GNLC (placeholder job keeps the dependency chain intact)
    - The handling is documented in the key `B1mapGNLCHandling` of the B1+ map JSON sidecar and the final JSON metadata
 
