@@ -165,10 +165,11 @@ b1_scanner_anat_status() {
 
 b1_print_not_scanner_anat_error() {
     echo "ERROR: The following custom B1+ maps were calculated from data NOT corrected for gradient nonlinearities"
-    echo "  and are NOT in scanner anatomical coordinates (qform_code/sform_code != 1). The sessions were skipped:"
+    echo "  and are NOT in scanner anatomical coordinates (qform_code/sform_code != 1). The following sessions were skipped:"
     printf "    %s\n" "$@"
     cat <<EOF
 
+Explanation:
 Correcting non-scanner anatomical data for gradient nonlinearities is not guaranteed to be correct:
 The distortion field is defined relative to the gradient isocenter in scanner coordinates. If the affine
 matrix of the image includes a coregistration rotation or translation, the correction is applied at the
@@ -176,7 +177,14 @@ wrong physical positions. (The hMRI toolbox/SPM sets qform_code/sform_code to 2 
 the AFI images are coregistered to the space of the structural images.)
 
 Options to process these sessions:
-1. If the B1+ map has the same affine matrix as the original (weighted) AFI images, i.e., the
+1. Gold standard: Correct the weighted AFI images for gradient nonlinearities and calculate the B1+ map
+   from the corrected images. In the hMRI toolbox, the B1+ map is created during the "Create hMRI maps"
+   step, i.e., correct the AFI images before this step and feed the corrected images into the toolbox
+   processing.
+2. Use -b1asis/--b1-use-as-is. The processing works, but the B1+ maps are NOT corrected for gradient
+   nonlinearities. Depending on the system, the effect is small to considerable; it mainly leads to
+   deviations in the periphery (very small effect near the isocenter).
+3. If the B1+ map has the same affine matrix as the original (weighted) AFI images, i.e., the
    coregistration did not change it, set qform_code and sform_code to 1 (scanner anat) and run again.
    Compare the affine matrices, e.g., with nibabel:
      python -c "import sys, nibabel as nib; [print(f, nib.load(f).affine, sep='\\n') for f in sys.argv[1:]]" <B1map.nii> <AFI.nii>
@@ -185,12 +193,5 @@ Options to process these sessions:
      fslorient -setsformcode 1 <B1map.nii>
    or with nibabel:
      python -c "import sys, nibabel as nib; img = nib.load(sys.argv[1]); img = nib.Nifti1Image(img.get_fdata(), img.affine, img.header); img.set_qform(img.get_qform(), code=1); img.set_sform(img.get_sform(), code=1); nib.save(img, sys.argv[1])" <B1map.nii>
-2. Use -b1asis/--b1-use-as-is. The processing works, but the B1+ maps are NOT corrected for gradient
-   nonlinearities. Depending on the system, the effect is small to considerable; it mainly leads to
-   deviations in the periphery (very small effect near the isocenter).
-3. Gold standard: Correct the weighted AFI images for gradient nonlinearities and calculate the B1+ map
-   from the corrected images. In the hMRI toolbox, the B1+ map is created during the "Create hMRI maps"
-   step, i.e., correct the AFI images before this step and feed the corrected images into the toolbox
-   processing.
 EOF
 }
