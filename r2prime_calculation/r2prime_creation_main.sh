@@ -591,7 +591,7 @@ for anat_path in "${anat_dirs[@]}"; do
         t2_img="$anat_path/${subject}_${session}_${t2_suffix}.nii"
 
         # does not run in custom container for now
-        # coregistered R2 is saved directly into the R2 input directory (anat_path)
+        # coregistered R2/T2 maps are saved into the working directory; the input maps in anat_path stay untouched
         coreg_cmd="sbatch -p short,group_servers,gr_weiskopf --dependency=afterok:$denoise_job_id --output=\"$logs_dir/%j_coregR2_${subject}_${session}.out\" \"$coreg_script\" \"$moving_img\" \"$ref_img\" \"$target_working_dir\" \"$t2_img\" \"$r2_img\""
 
         if [[ "$dry_run" == "false" ]]; then

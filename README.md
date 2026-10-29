@@ -46,7 +46,7 @@ This repository contains automated pipelines for processing Multi-Echo Spin-Echo
 **Processing Steps:**
 1. Reference Image Creation (PDw echo summation)
 2. Reference denoise + N4 and MESE echo summation + denoise + N4
-3. R2/T2 slab coregistration to PDw space
+3. R2/T2 slab coregistration to PDw space (applied to copies of the R2/T2 maps in the working directory; the input maps stay untouched)
 4. R2' Calculation with validation
 
 ---

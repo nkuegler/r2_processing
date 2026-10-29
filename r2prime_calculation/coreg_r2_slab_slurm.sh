@@ -21,9 +21,11 @@
 #   OTHER_IMAGE     - (Optional) Image(s) to reslice with the same transform
 #
 # OPERATIONS PERFORMED:
-#   1. Execute coregistration using the SPM batch created in coreg_r2_slab.m
-#   2. Move result to output directory
-#   3. Create comprehensive JSON sidecar metadata file
+#   1. Copy "other" images to output directory (SPM modifies headers in-place)
+#   2. Execute coregistration using the SPM batch created in coreg_r2_slab.m
+#   3. Move result to output directory
+#   4. Create comprehensive JSON sidecar metadata file
+#   5. Remove the header-modified copies of the other images
 #
 # EXAMPLE:
 #   sbatch coreg_r2_slab_slurm.sh \
@@ -34,6 +36,10 @@
 # NOTES:
 #   - Uses SPM12 coregistration with rigid body transformation (6 DOF)
 #   - Output file will have 'coreg_' prefix added to original filename
+#   - SPM's estimate step writes the estimated transform into the header of the
+#     moving and all other images in-place. Therefore, the other images are copied
+#     to OUTPUT_DIR and the copies are coregistered; the originals stay untouched.
+#     (The moving image is backed up as *_orig.nii, but modified in-place.)
 #   - Overwrites existing files if output already exists in target directory
 #   - Creates comprehensive JSON sidecar with processing metadata
 #   - Visual inspection of coregistration quality is recommended
@@ -89,6 +95,31 @@ if [[ ! "$output_dir" =~ /$ ]]; then
     output_dir="${output_dir}/"
 fi
 
+# Create output directory if it doesn't exist
+if [ ! -d "$output_dir" ]; then
+    echo "Creating output directory: $output_dir"
+    mkdir -p "$output_dir"
+fi
+
+# Copy other images to the output directory and coregister the copies instead,
+# since SPM's estimate step modifies the header (affine) of all images in-place
+other_imgs_orig=("${other_imgs[@]}")
+other_imgs_copies=()
+if (( ${#other_imgs[@]} > 0 )); then
+  for i in "${!other_imgs[@]}"; do
+    img="${other_imgs[$i]}"
+    img_copy="${output_dir}$(basename "$img")"
+    if [ "$img" -ef "$img_copy" ]; then
+      echo "Warning: Other image is already in output directory, its header will be modified in-place: $img"
+      continue
+    fi
+    echo "Copying other image to output directory: $img_copy"
+    cp "$img" "$img_copy" || { echo "Error: Failed to copy $img to $img_copy"; exit 1; }
+    other_imgs[$i]="$img_copy"
+    other_imgs_copies+=("$img_copy")
+  done
+fi
+
 # Define r2prime_calculation directory path
 r2prime_calc_dir="/data/u_kuegler_software/git/r2_processing/r2prime_calculation"
 
@@ -124,17 +155,11 @@ echo "--------------------------"
 echo "Processing coregistered image..."
 result_inputs=("$moving_img" "${other_imgs[@]}")
 
-# Create output directory if it doesn't exist
-if [ ! -d "$output_dir" ]; then
-    echo "Creating output directory: $output_dir"
-    mkdir -p "$output_dir"
-fi
-
 TIMESTAMP=$(date -Iseconds)
 other_json="[]"
-if (( ${#other_imgs[@]} > 0 )); then
+if (( ${#other_imgs_orig[@]} > 0 )); then
   other_json="["
-  for img in "${other_imgs[@]}"; do
+  for img in "${other_imgs_orig[@]}"; do
     if [[ "$other_json" != "[" ]]; then
       other_json+=", "
     fi
@@ -227,5 +252,11 @@ for result_input in "${result_inputs[@]}"; do
 }
 EOF
     echo "JSON sidecar created: ${JSON_FILE}"
+done
+
+# Remove the copies of the other images (header modified by SPM), so only the coregistered files remain
+for img_copy in "${other_imgs_copies[@]}"; do
+  echo "Removing temporary copy: $img_copy"
+  rm -f "$img_copy"
 done
 

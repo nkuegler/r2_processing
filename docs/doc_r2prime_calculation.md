@@ -43,7 +43,7 @@ The R2' calculation pipeline performs the following operations:
    - all qMRI maps are present in the PDw space
    - PDw echoes should be denoised and gradient nonlinearity corrected
 2. **Reference + MESE Preprocessing** - Denoise + N4 bias correction for the PDw reference, and MESE echo summation + denoise + N4 for the moving image
-3. **R2/T2 Slab Coregistration** - Aligns MESE sum to the PDw reference using SPM12 (*Estimate and Reslice*), then applies the transform to the R2 and T2 maps; coregistered outputs are saved directly into the R2 input directory
+3. **R2/T2 Slab Coregistration** - Aligns MESE sum to the PDw reference using SPM12 (*Estimate and Reslice*), then applies the transform to copies of the R2 and T2 maps in the working directory. The coregistered outputs are written to the same directory, and the copies are deleted afterwards, so the input R2/T2 maps are left untouched
 4. **R2' Calculation** - Computes `R2' = R2* - R2` with appropriate masking and validation
 5. **Cleanup** - Removes intermediate working directories (optional)
 
@@ -150,8 +150,10 @@ The pipeline consists of five main stages, executed sequentially for each subjec
 │ - Align MESE sum to PDw reference using SPM12                 │
 │ - Rigid body transformation (6 DOF)                          │
 │ - 4th degree B-spline interpolation                          │
-│ - Transform applied to R2 and T2 maps                         │
-│ - Coregistered outputs saved to R2 input directory            │
+│ - R2 and T2 maps copied to working directory                  │
+│ - Transform applied to the copies (inputs stay untouched)     │
+│ - Coregistered outputs saved to working directory             │
+│ - Copies deleted afterwards                                   │
 └──────────────────────────┬───────────────────────────────────┘
                            │
                            ↓
@@ -189,7 +191,7 @@ Reference + MESE Preprocessing (working_dir/)
    └── sub-XXX_ses-YY_MESE_echoes_sum_n4.nii
     │
     ↓
-Coregistered R2/T2 (r2_dir/)
+Coregistered R2/T2 (working_dir/)
     │
    ├── coreg_*_R2map.nii (R2 aligned to PDw space)
    └── coreg_*_T2map.nii (T2 aligned to PDw space)
@@ -453,24 +455,38 @@ PDw (Proton Density weighted) images are used because:
    - Verifies moving image (MESE sum N4) exists
    - Verifies reference image (PDw sum N4) exists
    - Verifies R2 and T2 maps exist
-   - Creates output directory if needed
+   - Creates output (working) directory if needed
 
-2. **SPM12 Coregistration**
+2. **Copy R2 and T2 Maps to the Working Directory**
+   - SPM's estimate step writes the estimated transform into the header (affine) of the
+     moving image and of all other images **in-place**
+   - To keep the input R2/T2 maps (and their alignment with e.g. the TB1map in the T2
+     output directory) untouched, the R2 and T2 maps are copied to the working directory
+     and only the copies are passed to SPM
+   - The moving image (MESE sum N4) already lives in the working directory; it is backed
+     up as `*_orig.nii` before coregistration
+
+3. **SPM12 Coregistration**
    - Executes MATLAB/SPM12 batch processing
    - Calls `coreg_r2_slab.m` MATLAB function
    - Performs rigid body alignment (6 degrees of freedom)
    - Uses normalized mutual information as cost function
+   - Applies the transform to the copies of the R2 and T2 maps and reslices them
+   - Writes the resliced images with `coreg_` prefix next to the copies, i.e. into the
+     working directory
 
-3. **Result Management**
-   - Applies the transform to the R2 and T2 maps
-   - Moves coregistered files to the R2 input directory
-   - Adds `coreg_` prefix to filenames
+4. **Result Management**
+   - Validates that all `coreg_*` files were created
    - Overwrites existing files if present
-   - Validates successful completion
 
-4. **JSON Metadata Creation**
-   - Creates comprehensive sidecar file
+5. **JSON Metadata Creation**
+   - Creates comprehensive sidecar file for each coregistered image
    - Documents all processing parameters (including software versions and timestamps)
+   - Lists the original (input) R2/T2 map paths as sources
+
+6. **Removal of the Copies**
+   - Deletes the copies of the R2 and T2 maps (their headers were modified by SPM), so only
+     the `coreg_*` files remain in the working directory
 
 #### Output Files
 
@@ -479,6 +495,7 @@ PDw (Proton Density weighted) images are used because:
 | `coreg_*_R2map.nii` | Coregistered R2 map in PDw space |
 | `coreg_*_T2map.nii` | Coregistered T2 map in PDw space |
 | `coreg_*_R2map.json` | Processing metadata with SPM parameters |
+| `coreg_*_T2map.json` | Processing metadata with SPM parameters |
 
 #### MATLAB Function: coreg_r2_slab.m
 
@@ -674,16 +691,19 @@ output_directory/
             └── anat/
                 ├── PDw_echoes_sum.nii
                 ├── PDw_echoes_sum.json
+                ├── coreg_*_R2map.nii    (coregistered R2 map)
+                ├── coreg_*_R2map.json   (coregistration metadata)
+                ├── coreg_*_T2map.nii    (coregistered T2 map)
+                ├── coreg_*_T2map.json   (coregistration metadata)
                 ├── r2s_minus_r2.nii.gz
                 └── r2pos_mask.nii.gz
 
-r2_directory/
+r2_directory/  (input, not modified by the pipeline)
 └── sub-XXX/
     └── ses-YY/
         └── anat/
             ├── *_R2map.nii          (original R2 map)
-            ├── coreg_*_R2map.nii    (coregistered R2 map, added by pipeline)
-            └── coreg_*_R2map.json   (coregistration metadata, added by pipeline)
+            └── *_T2map.nii          (original T2 map)
 ```
 
 **Note:** The `Supplementary/` directory is automatically removed after processing unless `--preserve-workdir` is specified.
