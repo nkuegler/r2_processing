@@ -41,11 +41,12 @@ The T2 processing pipeline performs the following operations on Multi-Echo Spin-
 1. **LC-PCA Denoising** - Removes noise while preserving signal using Marchenko-Pastur principal component analysis
 2. **Noise Bias Correction** - Corrects for noise floor bias in magnitude images
 3. **Gradient Non-linearity Correction (GNLC)** - Corrects geometric distortions from gradient field non-linearities
-4. **B1+ Field Mapping** - Calculates B1+ transmit field maps from Actual Flip Angle Imaging (AFI) data
-5. **Echo-Modulation Curve (EMC) Analysis** - Derives B1+ estimates from MESE signal evolution
-6. **B1+ Regularization** - Combines AFI and EMC estimates for robust B1+ mapping
-7. **Dictionary-based T2 Fitting** - Performs pattern matching against pre-computed signal dictionaries
-8. **R2 Map Calculation** - Computes transverse relaxation rate (R2 = 1/T2) maps
+4. **B1+ Field Mapping** - Provides the B1+ transmit field map from one of three sources:
+   - **AFI** - Calculated from Actual Flip Angle Imaging (AFI) data
+   - **EMC+AFI** (default) - AFI B1+ map regularized with a B1+ estimate derived from the MESE signal evolution via Echo-Modulation Curve (EMC) analysis (EMC estimate only at 3T)
+   - **Pre-calculated B1+ map** (`-b1`) - Externally calculated B1+ map, e.g., from the hMRI toolbox (no AFI data required)
+5. **Dictionary-based T2 Fitting** - Performs pattern matching against pre-computed signal dictionaries
+6. **R2 Map Calculation** - Computes transverse relaxation rate (R2 = 1/T2) maps
 
 The pipeline is designed for both **3T** and **7T** data, with field-strength-specific processing strategies implemented throughout. There may also be differences in processing online-reconstructed images (by the scanner) and images reconstructed from raw data offline. 
 
@@ -181,16 +182,29 @@ The pipeline consists of four main stages, executed sequentially for each subjec
 ┌──────────────────────────────────────────────────────────────┐
 │ Stage 2: Gradient Non-linearity Correction (GNLC)            │
 │ - GNLC for MESE data (with Jacobian modulation)              │
-│ - GNLC for AFI data (with Jacobian modulation)               │
+│ - GNLC for the B1+ source data:                              │
+│   - AFI / EMC+AFI: AFI data (with Jacobian modulation)       │
+│   - Pre-calculated B1+ map (-b1): B1+ map (without Jacobian  │
+│     modulation), or copied as is if already GNL-corrected    │
+│     (NonlinearGradientCorrection: true) or with -b1asis      │
 └──────────────────────────┬───────────────────────────────────┘
                            │
                            ↓
 ┌──────────────────────────────────────────────────────────────┐
 │ Stage 3: B1+ Correction & T2 Fitting                         │
-│ - B1+ mapping from AFI data                                  │
-│ - EMC-based B1+ estimation from MESE                         │
-│ - B1+ regularization (AFI+EMC for 7T, EMC-only for 3T)       │
-│ - Dictionary-based pattern matching                          │
+│ - B1+ map from one of three sources:                         │
+│ ┌──────────────────┬───────────────────┬───────────────────┐ │
+│ │ AFI              │ EMC+AFI (default) │ Pre-calculated    │ │
+│ │ B1_METHOD="AFI"  │ B1_METHOD=        │ B1+ map (-b1),    │ │
+│ │                  │   "AFIregEMC"     │ e.g. hMRI toolbox │ │
+│ ├──────────────────┼───────────────────┼───────────────────┤ │
+│ │ - AFI B1+ map    │ - AFI B1+ map     │ - Resampling to   │ │
+│ │ - Smoothing      │ - EMC B1+ estim.  │   MESE space      │ │
+│ │                  │ - Regularization: │ - Smoothing       │ │
+│ │                  │   7T: AFI+EMC     │                   │ │
+│ │                  │   3T: EMC only    │                   │ │
+│ └──────────────────┴───────────────────┴───────────────────┘ │
+│ - Dictionary-based pattern matching (T2 only, B1+ fixed)     │
 │ - T2 and R2 map calculation                                  │
 └──────────────────────────┬───────────────────────────────────┘
                            │
@@ -202,35 +216,41 @@ The pipeline consists of four main stages, executed sequentially for each subjec
 └──────────────────────────────────────────────────────────────┘
 ```
 
+> The B1+ source is selected via `-b1` (pre-calculated B1+ map, e.g. from the hMRI toolbox; no AFI data required) or, without `-b1`, via the hard-coded variable `B1_METHOD` at the top of `t2_calc_b1corr_t2fit.py` (see [Stage 3](#stage-3-b1-correction-and-t2-fitting)).
+
 > If the automatic noise extraction with `autodmri` fails (as with my 3T data), you have to provide manually drawn noise maps (see [here](#3T-specific-considerations))
 
 
 ### Data Flow
 
 ```
-Input Data (BIDS)
+Input Data
     │
-    ├── MESE echoes (anat/)
-    └── AFI images (fmap/)
+    ├── MESE echoes (BIDS anat/)
+    └── B1+ source data, one of:
+        ├── AFI images (BIDS fmap/)                    [AFI, EMC+AFI]
+        └── Pre-calculated B1+ map (custom_b1_dir/)    [-b1]
     │
     ↓
 Denoising Output (working_dir/denoise/)
     │
     ├── *_proc-denoisedNbc_MESE.nii
-    └── *_TB1AFI.nii
+    └── *_TB1AFI.nii                                   [AFI, EMC+AFI]
     │
-    ↓
+    ↓   [-b1: B1+ map (+ JSON sidecars) staged to working_dir/t2fit/]
+    │
 GNLC Output (working_dir/gnlc/)
     │
     ├── *_desc-undistortedJac_MESE.nii
-    └── *_desc-undistortedJac_TB1AFI.nii
+    ├── *_desc-undistortedJac_TB1AFI.nii               [AFI, EMC+AFI]
+    └── *_desc-undistorted_B1map.nii                   [-b1, GNL-corrected or copied as is]
     │
     ↓
 T2 Fitting Output (working_dir/t2fit/ → output_dir/)
     │
     ├── R2map.nii + .json
     ├── T2map.nii + .json
-    └── TB1map.nii + .json
+    └── TB1map.nii + .json  (B1+ map used for the T2 fitting)
 ```
 
 ### Data Discovery and Sanity Checks
@@ -577,7 +597,7 @@ For my 3T data, the `autodmri` approach (`pymritools.processing.denoising.extrac
    - MESE GNLC: Delayed by 60 seconds to avoid file conflicts
    - AFI GNLC: Starts immediately after denoising
    - Both write to same temporary directory sequentially
-   - Custom B1+ map GNLC (with `-b1`): Starts immediately (independent of the denoising); the B1+ map is staged in the t2fit working directory, so it does not interfere with the MESE GNLC
+   - Custom B1+ map GNLC (with `-b1`): Starts after denoising (replaces the AFI GNLC; the dependency ensures the GNLC job is still queued when the T2 fit bridge looks it up by name); the B1+ map is staged in the t2fit working directory, so it does not interfere with the MESE GNLC
 
 4. **Custom B1+ Map (with `-b1`)**
    - `NonlinearGradientCorrection: false` in `*B1ref.json`: GNLC **without** jacobian modulation (`--no-jacobian`, quantitative map)
