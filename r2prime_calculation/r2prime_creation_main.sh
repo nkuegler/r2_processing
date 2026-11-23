@@ -40,7 +40,7 @@ DESCRIPTION:
     1. Reference image creation (sum of PDw echoes)
     2. Reference denoise + N4 bias correction and MESE echo summation + denoise + N4
     3. R2/T2 slab coregistration to reference image
-    4. R2' calculation (R2* - R2)
+    4. R2' calculation (R2* - R2) and moving the coregistered R2/T2 maps to the output directory
     5. Session cleanup (removes intermediate files for each session)
     6. Final cleanup (removes remaining temporary directory structure)
     
@@ -646,10 +646,13 @@ for anat_path in "${anat_dirs[@]}"; do
 
         # Construct paths for R2' calculation
         r2_map="$target_working_dir/coreg_${subject}_${session}_${r2_suffix}.nii"
+        t2_map="$target_working_dir/coreg_${subject}_${session}_${t2_suffix}.nii"
         r2star_map="$r2s_dir/$subject/$session/anat/${subject}_${session}_${r2s_suffix}.nii"
         fname_r2prime="${subject}_${session}_${r2p_suffix}.nii.gz" # only filename, no path
 
-        r2prime_cmd="sbatch -p short,group_servers,gr_weiskopf --dependency=afterok:$coreg_job_id --output=\"$logs_dir/%j_calcR2prime_${subject}_${session}.out\" \"$r2prime_script\" \"$container_path\" \"$r2_map\" \"$r2star_map\" \"$target_working_dir\" \"$target_output_dir\" \"$fname_r2prime\""
+        # the coregistered R2/T2 maps (incl. JSON sidecars) are moved from the working directory to the
+        # output directory at the end of the R2' calculation, so they are kept if the working directory is deleted
+        r2prime_cmd="sbatch -p short,group_servers,gr_weiskopf --dependency=afterok:$coreg_job_id --output=\"$logs_dir/%j_calcR2prime_${subject}_${session}.out\" \"$r2prime_script\" \"$container_path\" \"$r2_map\" \"$r2star_map\" \"$target_working_dir\" \"$target_output_dir\" \"$fname_r2prime\" \"$r2_map\" \"$t2_map\""
 
         if [[ "$dry_run" == "false" ]]; then
             # Check if R2* map file exists
@@ -778,7 +781,7 @@ echo "Processing pipeline per session:"
 echo "  1. Reference image creation (PDw echo summation)"
 echo "  2. Reference denoise + N4 and MESE echo summation + denoise + N4"
 echo "  3. R2/T2 slab coregistration to reference image"
-echo "  4. R2' calculation (R2* - R2)"
+echo "  4. R2' calculation (R2* - R2) + move coregistered R2/T2 maps to output directory"
 if [[ "$delete_workdir" == "true" ]]; then
     echo "  5. Session cleanup → 6. Final cleanup (after all sessions)"
     echo "Working directory cleanup: ENABLED (default)"

@@ -11,7 +11,7 @@
 #   and CBS infrastructure's prebuilt modules.
 #
 # USAGE:
-#   sbatch r2prime_calc.sh <CONTAINER_PATH> <R2_MAP> <R2STAR_MAP> <WORK_DIR> <OUTPUT_DIR> [OUTPUT_NAME]
+#   sbatch r2prime_calc.sh <CONTAINER_PATH> <R2_MAP> <R2STAR_MAP> <WORK_DIR> <OUTPUT_DIR> [OUTPUT_NAME] [FILE_TO_MOVE...]
 #
 # ARGUMENTS:
 #   CONTAINER_PATH  - Path to Singularity container with FSL tools
@@ -20,6 +20,9 @@
 #   WORK_DIR        - Directory where temporary files will be saved
 #   OUTPUT_DIR      - Directory where final results will be saved
 #   OUTPUT_NAME     - (Optional) Name of output R2' file. Must be specified with .nii.gz extension (default: "r2prime.nii.gz")
+#   FILE_TO_MOVE    - (Optional) .nii file(s) (e.g., the coregistered R2/T2 maps in WORK_DIR) to be moved
+#                     to OUTPUT_DIR together with their .json sidecars after the R2' calculation.
+#                     Requires OUTPUT_NAME to be specified.
 #
 # OPERATIONS PERFORMED:
 #   1. Validate input files and directories
@@ -27,7 +30,8 @@
 #   3. Calculate R2' = R2* - R2 using FSL tools
 #   4. Create mask from R2 map to exclude NaN and non-positive values
 #   5. Apply mask and threshold R2' to positive values only
-#   6. Create comprehensive JSON sidecar metadata file
+#   6. Move additional files (FILE_TO_MOVE, incl. .json sidecars) to OUTPUT_DIR
+#   7. Create comprehensive JSON sidecar metadata file
 #
 # EXAMPLE:
 #   sbatch r2prime_calc.sh \
@@ -36,7 +40,9 @@
 #     /data/input/r2star_map.nii.gz \
 #     /data/temp/work \
 #     /data/output/r2prime \
-#     "custom_r2prime.nii.gz"
+#     "custom_r2prime.nii.gz" \
+#     /data/temp/work/coreg_r2_map.nii \
+#     /data/temp/work/coreg_t2_map.nii
 #
 # NOTES:
 #   - Supports both custom containers (custom_container=true) and CBS sc modules
@@ -63,11 +69,12 @@ R2STAR_MAP="$3"
 WORK_DIR="$4"
 OUTPUT_DIR="$5"
 OUTPUT_NAME="${6:-r2prime.nii.gz}"  # Default output name if not provided
+FILES_TO_MOVE=("${@:7}")  # Optional files to move to the output directory at the end
 
 # Check if required arguments are provided
 if [ $# -lt 5 ]; then
     echo "Error: At least 5 arguments required."
-    echo "Usage: $0 <CONTAINER_PATH> <R2_MAP> <R2STAR_MAP> <WORK_DIR> <OUTPUT_DIR> [OUTPUT_NAME]"
+    echo "Usage: $0 <CONTAINER_PATH> <R2_MAP> <R2STAR_MAP> <WORK_DIR> <OUTPUT_DIR> [OUTPUT_NAME] [FILE_TO_MOVE...]"
     exit 1
 fi
 
@@ -78,6 +85,12 @@ echo "R2* Map: ${R2STAR_MAP}"
 echo "Work Directory: ${WORK_DIR}"
 echo "Output Directory: ${OUTPUT_DIR}"
 echo "Output Name: ${OUTPUT_NAME}"
+if (( ${#FILES_TO_MOVE[@]} > 0 )); then
+    echo "Files to move to output directory:"
+    for f in "${FILES_TO_MOVE[@]}"; do
+        echo "  ${f}"
+    done
+fi
 echo "--------"
 
 # Good scientists abort computations upon unexpected problems
@@ -96,6 +109,14 @@ if [ ! -f "${R2STAR_MAP}" ]; then
     echo "Error: R2* map file does not exist: ${R2STAR_MAP}"
     exit 1
 fi
+
+# Validate that the files to be moved exist (check early to avoid failing after the calculation)
+for f in "${FILES_TO_MOVE[@]}"; do
+    if [ ! -f "${f}" ]; then
+        echo "Error: File to be moved to the output directory does not exist: ${f}"
+        exit 1
+    fi
+done
 
 # Validate container exists if using custom container
 if [[ ${custom_container} == true ]] && [ ! -f "${CONTAINER_PATH}" ]; then
@@ -174,6 +195,28 @@ fi
 echo ">>> Decompressing output file..."
 gunzip "${OUTPUT_DIR}/${OUTPUT_NAME}"
 
+# Move additional files (e.g., coregistered R2/T2 maps) incl. their JSON sidecars to the output directory,
+# so that they are preserved even if the working directory is deleted
+R2_MAP_SOURCE="${R2_MAP}"
+if (( ${#FILES_TO_MOVE[@]} > 0 )); then
+    echo ">>> Moving additional files to output directory..."
+    for f in "${FILES_TO_MOVE[@]}"; do
+        f_json="${f%.nii*}.json"
+        # reference the R2 map at its new location in the R2' JSON sidecar
+        if [ "${f}" -ef "${R2_MAP}" ]; then
+            R2_MAP_SOURCE="${OUTPUT_DIR}/$(basename "${f}")"
+        fi
+        mv "${f}" "${OUTPUT_DIR}/"
+        echo "Moved: ${f} -> ${OUTPUT_DIR}/$(basename "${f}")"
+        if [ -f "${f_json}" ]; then
+            mv "${f_json}" "${OUTPUT_DIR}/"
+            echo "Moved: ${f_json} -> ${OUTPUT_DIR}/$(basename "${f_json}")"
+        else
+            echo "Warning: No JSON sidecar found for ${f}"
+        fi
+    done
+fi
+
 echo ">>> Creating JSON sidecar file..."
 # Create JSON metadata file for the R2' map
 JSON_FILE="${OUTPUT_DIR}/${OUTPUT_NAME%.nii.gz}.json"
@@ -183,7 +226,7 @@ cat > "${JSON_FILE}" << EOF
 {
   "Description": "R2 prime (R2') map calculated by subtracting R2 from R2* maps",
   "Sources": {
-    "R2_map": "${R2_MAP}",
+    "R2_map": "${R2_MAP_SOURCE}",
     "R2star_map": "${R2STAR_MAP}"
   },
   "ProcessingSteps": [

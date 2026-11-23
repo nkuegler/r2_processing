@@ -162,6 +162,7 @@ The pipeline consists of five main stages, executed sequentially for each subjec
 │ - Validate sform matrix alignment between R2* and R2         │
 │ - Calculate R2' = R2* - R2                                   │
 │ - Apply masking and thresholding                             │
+│ - Move coregistered R2/T2 maps (+ JSON) to output directory  │
 └──────────────────────────┬───────────────────────────────────┘
                            │
                            ↓
@@ -199,7 +200,9 @@ Coregistered R2/T2 (working_dir/)
     ↓
 Final R2' Output (output_dir/)
     │
-    └── *_R2primemap.nii + .json
+   ├── *_R2primemap.nii + .json
+   ├── coreg_*_R2map.nii + .json (moved from working_dir/)
+   └── coreg_*_T2map.nii + .json (moved from working_dir/)
 ```
 
 > Additional helper files will be created but deleted in the cleanup step. Use the `--preserve-workdir` flag to avoid the deletion of intermediate files.
@@ -487,6 +490,8 @@ PDw (Proton Density weighted) images are used because:
 6. **Removal of the Copies**
    - Deletes the copies of the R2 and T2 maps (their headers were modified by SPM), so only
      the `coreg_*` files remain in the working directory
+   - The `coreg_*` files are moved to the output directory at the end of the R2' calculation
+     (see [Stage 4](#stage-4-r2-calculation))
 
 #### Output Files
 
@@ -552,7 +557,10 @@ The function:
 
 5. **File Management**
    - Decompresses final output (.nii.gz → .nii)
-   - Creates comprehensive JSON metadata
+   - Moves the coregistered R2/T2 maps (`coreg_*_R2map.nii`, `coreg_*_T2map.nii`) incl. their JSON
+     sidecars from the working directory to the output directory, so they are preserved even if the
+     working directory is deleted (passed as optional trailing arguments to `r2prime_calc.sh`)
+   - Creates comprehensive JSON metadata (the R2 source refers to the moved coregistered R2 map)
    - Documents all processing steps and validation
 
 #### Mathematical Operations
@@ -660,8 +668,9 @@ Use the `--preserve-workdir` or `-pw` flag to retain intermediate files:
 
 This preserves:
 - PDw echo sum reference images
-- Coregistered R2 maps
 - Intermediate masking files
+
+(The coregistered R2/T2 maps are always kept, as they are moved to the output directory.)
 - Useful for quality control and debugging
 
 ---
@@ -676,7 +685,11 @@ output_directory/
 │   ├── ses-01/
 │   │   └── anat/
 │   │       ├── sub-001_ses-01_R2primemap.nii
-│   │       └── sub-001_ses-01_R2primemap.json
+│   │       ├── sub-001_ses-01_R2primemap.json
+│   │       ├── coreg_sub-001_ses-01_R2map.nii    (coregistered R2 map)
+│   │       ├── coreg_sub-001_ses-01_R2map.json   (coregistration metadata)
+│   │       ├── coreg_sub-001_ses-01_T2map.nii    (coregistered T2 map)
+│   │       └── coreg_sub-001_ses-01_T2map.json   (coregistration metadata)
 │   ├── ses-02/
 │   │   └── anat/
 │   │       └── ... (same structure)
@@ -691,10 +704,6 @@ output_directory/
             └── anat/
                 ├── PDw_echoes_sum.nii
                 ├── PDw_echoes_sum.json
-                ├── coreg_*_R2map.nii    (coregistered R2 map)
-                ├── coreg_*_R2map.json   (coregistration metadata)
-                ├── coreg_*_T2map.nii    (coregistered T2 map)
-                ├── coreg_*_T2map.json   (coregistration metadata)
                 ├── r2s_minus_r2.nii.gz
                 └── r2pos_mask.nii.gz
 
