@@ -233,7 +233,7 @@ cat > "${JSON_FILE}" << EOF
     "Calculation: R2' = R2* - R2",
     "Creation of positive value mask from R2 map",
     "Application of mask to R2' result",
-    "Thresholding to positive values only",
+    "Thresholding to positive values only"
   ],
   "SoftwareInformation": {
     "Container": $([ "${custom_container}" = true ] && echo "\"${CONTAINER_PATH}\"" || echo '"CBS sc modules"'),
